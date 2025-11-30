@@ -1,0 +1,32 @@
+# Virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data directories
+uploads/
+chroma_db/
+*.db
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Environment variables (don't commit real API keys)
+.env
+
+chroma_db/
+chroma_data/
+ragtest.7z
+report.7z
+
+
+
