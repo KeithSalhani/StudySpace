@@ -10,6 +10,7 @@ from typing import List, Optional
 import os
 import shutil
 import tempfile
+import time
 
 from config import GEMINI_API_KEY, UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR
 from document_processor import DocumentProcessor
@@ -63,6 +64,7 @@ async def upload_document(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
 
         # Process document
+        start_time = time.time()
         content = doc_processor.process_document(str(file_path))
         
         # Classify document
@@ -72,7 +74,19 @@ async def upload_document(file: UploadFile = File(...)):
             # Fallback defaults if no tags exist
             current_tags = ['Forensics', 'Machine Learning', 'Security', 'Study Material']
             
-        predicted_tag = doc_processor.classify_content(content, current_tags)
+        classification_result = doc_processor.classify_content_full(content, current_tags)
+        
+        end_time = time.time()
+        processing_time = end_time - start_time
+        
+        print(f"DEBUG: Document processing and classification took {processing_time:.2f} seconds")
+        
+        predicted_tag = None
+        if classification_result:
+            predicted_tag = classification_result['labels'][0]
+            print("DEBUG: Categorization percentages:")
+            for label, score in zip(classification_result['labels'], classification_result['scores']):
+                print(f"  - {label}: {score*100:.2f}%")
         
         if predicted_tag:
             # Add the predicted tag to the database if it doesn't exist (it should, since we used existing tags)

@@ -65,6 +65,26 @@ class DocumentProcessor:
             logger.error(f"Error classifying content: {str(e)}")
             return None
 
+    def classify_content_full(self, content: str, labels: List[str]) -> Optional[dict]:
+        """
+        Classify the content and return the full result
+        
+        Args:
+            content: Text content to classify
+            labels: List of possible labels
+            
+        Returns:
+            Dictionary containing labels and scores
+        """
+        try:
+            if not content or not labels:
+                return None
+                
+            return self.classifier.classify(content, labels)
+        except Exception as e:
+            logger.error(f"Error classifying content: {str(e)}")
+            return None
+
     def process_text_file(self, file_path: str) -> str:
         """
         Process plain text files
