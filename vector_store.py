@@ -24,7 +24,7 @@ class VectorStore:
         self.collection = self.client.get_or_create_collection(name=collection_name)
 
         # Initialize sentence transformer
-        self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+        self.embedding_model = SentenceTransformer(EMBEDDING_MODEL, device='cpu')
 
         # Keep track of documents for metadata
         self.documents = {}

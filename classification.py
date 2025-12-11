@@ -4,7 +4,9 @@ from typing import List, Dict
 class Classifier:
     def __init__(self):
         self.classifier = pipeline("zero-shot-classification",
-                      model="facebook/bart-large-mnli")
+                      model="facebook/bart-large-mnli",
+                      device=-1
+                      )
         
     def classify(self, text: str, candidate_labels: List[str]) -> Dict:
         """

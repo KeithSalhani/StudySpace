@@ -1,7 +1,10 @@
 """
 Document processing module using Markitdown
 """
-from markitdown import MarkItDown
+from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from pathlib import Path
 import logging
 from typing import List, Optional
@@ -9,9 +12,22 @@ from classification import Classifier
 
 logger = logging.getLogger(__name__)
 
+accelerator_options = AcceleratorOptions(
+    device=AcceleratorDevice.CPU,
+    num_threads=8,
+)
+
 class DocumentProcessor:
     def __init__(self):
-        self.markitdown = MarkItDown()
+        pdf_pipeline_options = PdfPipelineOptions()
+        pdf_pipeline_options.accelerator_options = accelerator_options
+        self.converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pdf_pipeline_options,
+                )
+            }
+        )
         self.classifier = Classifier()
 
     def process_document(self, file_path: str) -> str:
@@ -31,13 +47,13 @@ class DocumentProcessor:
                 raise FileNotFoundError(f"File not found: {file_path}")
 
             # Convert document to markdown
-            result = self.markitdown.convert(file_path)
+            result = self.converter.convert(file_path)
 
             if result is None:
                 raise ValueError(f"Failed to process document: {file_path}")
 
             logger.info(f"Successfully processed document: {file_path}")
-            return result.text_content
+            return result.document.export_to_markdown()
 
         except Exception as e:
             logger.error(f"Error processing document {file_path}: {str(e)}")
