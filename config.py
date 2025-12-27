@@ -16,12 +16,14 @@ UPLOAD_DIR = PROJECT_ROOT / "uploads"
 STATIC_DIR = PROJECT_ROOT / "static"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 CHROMA_DB_DIR = PROJECT_ROOT / "chroma_db"
+PROCESSED_DIR = PROJECT_ROOT / "processed"
 
 # Create directories if they don't exist
 UPLOAD_DIR.mkdir(exist_ok=True)
 STATIC_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
 CHROMA_DB_DIR.mkdir(exist_ok=True)
+PROCESSED_DIR.mkdir(exist_ok=True)
 
 # Vector store settings
 COLLECTION_NAME = "student_documents"

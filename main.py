@@ -12,10 +12,11 @@ import shutil
 import tempfile
 import time
 
-from config import GEMINI_API_KEY, UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR
+from config import GEMINI_API_KEY, UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR, PROCESSED_DIR
 from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from rag_chat import RAGChat
+from quiz_generator import QuizGenerator
 from db import JSONDatabase
 
 # Check for API key
@@ -34,6 +35,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 doc_processor = DocumentProcessor()
 vector_store = VectorStore()
 rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
+quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 db = JSONDatabase()
 
 class ChatRequest(BaseModel):
@@ -48,6 +50,11 @@ class TagRequest(BaseModel):
 
 class NoteRequest(BaseModel):
     content: str
+
+class QuizRequest(BaseModel):
+    filename: str
+    num_questions: int = 5
+    difficulty: str = "Medium"
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
@@ -66,6 +73,11 @@ async def upload_document(file: UploadFile = File(...)):
         # Process document
         start_time = time.time()
         content = doc_processor.process_document(str(file_path))
+        
+        # Save processed content for Quiz Generation
+        processed_path = PROCESSED_DIR / f"{file.filename}.md"
+        with open(processed_path, "w", encoding="utf-8") as f:
+            f.write(content)
         
         # Classify document
         # Get current tags as candidates
@@ -201,6 +213,17 @@ async def delete_note(note_id: str):
     if db.delete_note(note_id):
         return {"message": "Note deleted successfully"}
     raise HTTPException(status_code=404, detail="Note not found")
+
+@app.post("/quiz/generate")
+async def generate_quiz(request: QuizRequest):
+    """Generate a quiz from a document"""
+    try:
+        quiz = quiz_generator.generate_quiz(request.filename, request.num_questions, request.difficulty)
+        return quiz
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Document not found or not processed yet")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating quiz: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
