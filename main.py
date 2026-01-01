@@ -17,6 +17,7 @@ from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from rag_chat import RAGChat
 from quiz_generator import QuizGenerator
+from flashcard_generator import FlashcardGenerator
 from db import JSONDatabase
 
 # Check for API key
@@ -36,6 +37,7 @@ doc_processor = DocumentProcessor()
 vector_store = VectorStore()
 rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
+flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 db = JSONDatabase()
 
 class ChatRequest(BaseModel):
@@ -55,6 +57,10 @@ class QuizRequest(BaseModel):
     filename: str
     num_questions: int = 5
     difficulty: str = "Medium"
+
+class FlashcardRequest(BaseModel):
+    filename: str
+    num_cards: int = 10
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
@@ -224,6 +230,17 @@ async def generate_quiz(request: QuizRequest):
         raise HTTPException(status_code=404, detail="Document not found or not processed yet")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating quiz: {str(e)}")
+
+@app.post("/flashcards/generate")
+async def generate_flashcards(request: FlashcardRequest):
+    """Generate flashcards from a document"""
+    try:
+        flashcards = flashcard_generator.generate_flashcards(request.filename, request.num_cards)
+        return flashcards
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Document not found or not processed yet")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating flashcards: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
