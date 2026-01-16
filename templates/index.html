@@ -385,6 +385,36 @@
             color: #ef4444;
         }
 
+        .studio-tool-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 12px;
+            background: var(--sidebar-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+            margin-bottom: 8px;
+        }
+
+        .studio-tool-btn:hover:not(:disabled) {
+            border-color: var(--primary-color);
+            background: var(--bg-color);
+        }
+
+        .studio-tool-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .tool-icon {
+            font-size: 1.2rem;
+        }
+
         /* Chat Area */
         .chat-interface {
             flex: 1;
@@ -849,10 +879,26 @@
                 <span>Studio</span>
             </div>
             <div class="studio-content">
-                <div style="color: var(--text-secondary); font-size: 0.9rem; text-align: center; margin-top: 20px;">
-                    Select a document to view study tools.
+                <div class="studio-section">
+                    <div class="section-title">Source Document</div>
+                    <select id="documentSelect" class="sidebar-input" style="width: 100%; margin-bottom: 16px;">
+                        <option value="" disabled selected>Select a document...</option>
+                    </select>
                 </div>
-                <!-- Placeholder for future tools -->
+
+                <div class="studio-section">
+                    <div class="section-title">Tools</div>
+                    <div class="studio-tools">
+                        <button id="studioQuizBtn" class="studio-tool-btn" disabled>
+                            <span class="tool-icon">📝</span>
+                            Generate Quiz
+                        </button>
+                        <button id="studioFlashcardBtn" class="studio-tool-btn" disabled>
+                            <span class="tool-icon">🗂️</span>
+                            Generate Flashcards
+                        </button>
+                    </div>
+                </div>
             </div>
         </aside>
     </div>
@@ -1165,28 +1211,51 @@
                                 <div class="doc-name" title="${name}">${name}</div>
                                 ${tag}
                             </div>
-                            <button class="quiz-btn" data-filename="${name}">Quiz</button>
-                            <button class="quiz-btn" data-filename="${name}" data-type="flashcards" style="background-color: #8b5cf6;">Cards</button>
                             <div class="document-delete" onclick="deleteDocument('${name}')" title="Delete">&times;</div>
                         </div>`;
                     }).join('');
                     
-                    // Add event listeners for quiz and flashcard buttons
-                    document.querySelectorAll('.quiz-btn').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            if (btn.dataset.type === 'flashcards') {
-                                startFlashcards(btn.dataset.filename);
-                            } else {
-                                startQuiz(btn.dataset.filename);
-                            }
-                        });
-                    });
+                    // Update Document Selector
+                    const documentSelect = document.getElementById('documentSelect');
+                    const currentSelection = documentSelect.value;
+                    
+                    documentSelect.innerHTML = '<option value="" disabled selected>Select a document...</option>' + 
+                        data.documents.map(doc => {
+                            const name = typeof doc === 'string' ? doc : doc.filename;
+                            return `<option value="${name}">${name}</option>`;
+                        }).join('');
+                        
+                    if (currentSelection && Array.from(documentSelect.options).some(opt => opt.value === currentSelection)) {
+                        documentSelect.value = currentSelection;
+                    }
                 }
             } catch (error) {
                 console.error('Error loading documents:', error);
             }
         }
+
+        // Studio Logic
+        const documentSelect = document.getElementById('documentSelect');
+        const studioQuizBtn = document.getElementById('studioQuizBtn');
+        const studioFlashcardBtn = document.getElementById('studioFlashcardBtn');
+
+        documentSelect.addEventListener('change', () => {
+            const hasSelection = !!documentSelect.value;
+            studioQuizBtn.disabled = !hasSelection;
+            studioFlashcardBtn.disabled = !hasSelection;
+        });
+
+        studioQuizBtn.addEventListener('click', () => {
+            if (documentSelect.value) {
+                startQuiz(documentSelect.value);
+            }
+        });
+
+        studioFlashcardBtn.addEventListener('click', () => {
+            if (documentSelect.value) {
+                startFlashcards(documentSelect.value);
+            }
+        });
 
         // Flashcard Logic
         const flashcardModal = document.getElementById('flashcardModal');
