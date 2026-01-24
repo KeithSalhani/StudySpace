@@ -385,34 +385,91 @@
             color: #ef4444;
         }
 
-        .studio-tool-btn {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            width: 100%;
-            padding: 12px;
-            background: var(--sidebar-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: all 0.2s;
-            text-align: left;
-            margin-bottom: 8px;
+        .studio-tools {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
         }
 
-        .studio-tool-btn:hover:not(:disabled) {
+        .studio-card {
+            background: var(--sidebar-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .studio-card:hover:not(.disabled) {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
             border-color: var(--primary-color);
+        }
+
+        .studio-card.disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
             background: var(--bg-color);
         }
 
-        .studio-tool-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
         }
 
-        .tool-icon {
-            font-size: 1.2rem;
+        .card-content {
+            flex: 1;
+        }
+
+        .card-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+
+        .card-desc {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Card Themes */
+        .card-quiz .card-icon {
+            background-color: #e0e7ff;
+            color: #4f46e5;
+        }
+        .dark-mode .card-quiz .card-icon {
+            background-color: #312e81;
+            color: #818cf8;
+        }
+
+        .card-flashcards .card-icon {
+            background-color: #dcfce7;
+            color: #16a34a;
+        }
+        .dark-mode .card-flashcards .card-icon {
+            background-color: #064e3b;
+            color: #4ade80;
+        }
+
+        .card-audio .card-icon {
+            background-color: #dbeafe;
+            color: #2563eb;
+        }
+        .dark-mode .card-audio .card-icon {
+            background-color: #1e3a8a;
+            color: #60a5fa;
         }
 
         /* Chat Area */
@@ -889,14 +946,32 @@
                 <div class="studio-section">
                     <div class="section-title">Tools</div>
                     <div class="studio-tools">
-                        <button id="studioQuizBtn" class="studio-tool-btn" disabled>
-                            <span class="tool-icon">📝</span>
-                            Generate Quiz
-                        </button>
-                        <button id="studioFlashcardBtn" class="studio-tool-btn" disabled>
-                            <span class="tool-icon">🗂️</span>
-                            Generate Flashcards
-                        </button>
+                        <!-- Audio Overview (Placeholder) -->
+                        <div class="studio-card card-audio disabled" title="Coming soon">
+                            <div class="card-icon">🎧</div>
+                            <div class="card-content">
+                                <div class="card-title">Audio Overview</div>
+                                <div class="card-desc">Listen to a summary</div>
+                            </div>
+                        </div>
+
+                        <!-- Quiz -->
+                        <div id="studioQuizBtn" class="studio-card card-quiz disabled">
+                            <div class="card-icon">📝</div>
+                            <div class="card-content">
+                                <div class="card-title">Quiz</div>
+                                <div class="card-desc">Test your knowledge</div>
+                            </div>
+                        </div>
+
+                        <!-- Flashcards -->
+                        <div id="studioFlashcardBtn" class="studio-card card-flashcards disabled">
+                            <div class="card-icon">🗂️</div>
+                            <div class="card-content">
+                                <div class="card-title">Flashcards</div>
+                                <div class="card-desc">Practice concepts</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1241,18 +1316,24 @@
 
         documentSelect.addEventListener('change', () => {
             const hasSelection = !!documentSelect.value;
-            studioQuizBtn.disabled = !hasSelection;
-            studioFlashcardBtn.disabled = !hasSelection;
+            
+            if (hasSelection) {
+                studioQuizBtn.classList.remove('disabled');
+                studioFlashcardBtn.classList.remove('disabled');
+            } else {
+                studioQuizBtn.classList.add('disabled');
+                studioFlashcardBtn.classList.add('disabled');
+            }
         });
 
         studioQuizBtn.addEventListener('click', () => {
-            if (documentSelect.value) {
+            if (!studioQuizBtn.classList.contains('disabled') && documentSelect.value) {
                 startQuiz(documentSelect.value);
             }
         });
 
         studioFlashcardBtn.addEventListener('click', () => {
-            if (documentSelect.value) {
+            if (!studioFlashcardBtn.classList.contains('disabled') && documentSelect.value) {
                 startFlashcards(documentSelect.value);
             }
         });
