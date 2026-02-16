@@ -6,6 +6,7 @@ from sentence_transformers import SentenceTransformer
 import logging
 from typing import List, Dict, Any, Tuple
 import uuid
+import threading
 
 from config import COLLECTION_NAME, CHROMA_DB_DIR, EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, DEFAULT_SEARCH_RESULTS
 
@@ -20,6 +21,7 @@ class VectorStore:
             collection_name: Name of the ChromaDB collection
             persist_directory: Directory to persist the database
         """
+        self._lock = threading.RLock()
         self.client = chromadb.PersistentClient(path=persist_directory)
         self.collection = self.client.get_or_create_collection(name=collection_name)
 
@@ -37,30 +39,31 @@ class VectorStore:
     def _load_documents_from_collection(self):
         """Load existing documents metadata from ChromaDB collection"""
         try:
-            # Get all data
-            result = self.collection.get()
-            if not result['ids']:
-                return
+            with self._lock:
+                # Get all data
+                result = self.collection.get()
+                if not result['ids']:
+                    return
 
-            # Reconstruct self.documents structure
-            # We only have chunks in DB, so we need to aggregate them back to document level metadata
-            # This is an approximation because we don't store the full original content in one piece
-            # But for metadata purposes (filename, tag), it's enough.
-            
-            seen_doc_ids = set()
-            
-            for i, metadata in enumerate(result['metadatas']):
-                if not metadata: continue
-                
-                doc_id = metadata.get('doc_id')
-                if doc_id and doc_id not in seen_doc_ids:
-                    # Create a dummy entry for self.documents to track existence
-                    self.documents[doc_id] = {
-                        "content": "(Content loaded from DB)", # We don't load full content to memory on init
-                        "metadata": metadata,
-                        "chunks": metadata.get('total_chunks', 1)
-                    }
-                    seen_doc_ids.add(doc_id)
+                # Reconstruct self.documents structure
+                # We only have chunks in DB, so we need to aggregate them back to document level metadata
+                # This is an approximation because we don't store the full original content in one piece
+                # But for metadata purposes (filename, tag), it's enough.
+                seen_doc_ids = set()
+
+                for i, metadata in enumerate(result['metadatas']):
+                    if not metadata:
+                        continue
+
+                    doc_id = metadata.get('doc_id')
+                    if doc_id and doc_id not in seen_doc_ids:
+                        # Create a dummy entry for self.documents to track existence
+                        self.documents[doc_id] = {
+                            "content": "(Content loaded from DB)", # We don't load full content to memory on init
+                            "metadata": metadata,
+                            "chunks": metadata.get('total_chunks', 1)
+                        }
+                        seen_doc_ids.add(doc_id)
                     
         except Exception as e:
             logger.error(f"Error loading documents from collection: {str(e)}")
@@ -75,42 +78,43 @@ class VectorStore:
             metadata: Additional metadata for the document
         """
         try:
-            # Split content into chunks (simple approach - split by paragraphs)
-            chunks = self._chunk_text(content, CHUNK_SIZE, CHUNK_OVERLAP)
+            with self._lock:
+                # Split content into chunks (simple approach - split by paragraphs)
+                chunks = self._chunk_text(content, CHUNK_SIZE, CHUNK_OVERLAP)
 
-            # Generate embeddings for each chunk
-            embeddings = self.embedding_model.encode(chunks)
+                # Generate embeddings for each chunk
+                embeddings = self.embedding_model.encode(chunks)
 
-            # Prepare data for ChromaDB
-            ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
-            documents = chunks
-            metadatas = []
+                # Prepare data for ChromaDB
+                ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
+                documents = chunks
+                metadatas = []
 
-            for i, chunk in enumerate(chunks):
-                chunk_metadata = metadata.copy() if metadata else {}
-                chunk_metadata.update({
-                    "doc_id": doc_id,
-                    "chunk_index": i,
-                    "total_chunks": len(chunks)
-                })
-                metadatas.append(chunk_metadata)
+                for i, chunk in enumerate(chunks):
+                    chunk_metadata = metadata.copy() if metadata else {}
+                    chunk_metadata.update({
+                        "doc_id": doc_id,
+                        "chunk_index": i,
+                        "total_chunks": len(chunks)
+                    })
+                    metadatas.append(chunk_metadata)
 
-            # Add to collection
-            self.collection.add(
-                embeddings=embeddings.tolist(),
-                documents=documents,
-                metadatas=metadatas,
-                ids=ids
-            )
+                # Add to collection
+                self.collection.add(
+                    embeddings=embeddings.tolist(),
+                    documents=documents,
+                    metadatas=metadatas,
+                    ids=ids
+                )
 
-            # Store document info
-            self.documents[doc_id] = {
-                "content": content,
-                "metadata": metadata or {},
-                "chunks": len(chunks)
-            }
+                # Store document info
+                self.documents[doc_id] = {
+                    "content": content,
+                    "metadata": metadata or {},
+                    "chunks": len(chunks)
+                }
 
-            logger.info(f"Added document {doc_id} with {len(chunks)} chunks")
+                logger.info(f"Added document {doc_id} with {len(chunks)} chunks")
 
         except Exception as e:
             logger.error(f"Error adding document {doc_id}: {str(e)}")
@@ -128,27 +132,28 @@ class VectorStore:
             List of search results with documents, metadata, and distances
         """
         try:
-            # Generate embedding for query
-            query_embedding = self.embedding_model.encode([query])[0]
+            with self._lock:
+                # Generate embedding for query
+                query_embedding = self.embedding_model.encode([query])[0]
 
-            # Search in collection
-            results = self.collection.query(
-                query_embeddings=[query_embedding.tolist()],
-                n_results=n_results
-            )
+                # Search in collection
+                results = self.collection.query(
+                    query_embeddings=[query_embedding.tolist()],
+                    n_results=n_results
+                )
 
-            # Format results
-            formatted_results = []
-            for i in range(len(results['documents'][0])):
-                result = {
-                    "document": results['documents'][0][i],
-                    "metadata": results['metadatas'][0][i],
-                    "distance": results['distances'][0][i] if 'distances' in results else None,
-                    "id": results['ids'][0][i]
-                }
-                formatted_results.append(result)
+                # Format results
+                formatted_results = []
+                for i in range(len(results['documents'][0])):
+                    result = {
+                        "document": results['documents'][0][i],
+                        "metadata": results['metadatas'][0][i],
+                        "distance": results['distances'][0][i] if 'distances' in results else None,
+                        "id": results['ids'][0][i]
+                    }
+                    formatted_results.append(result)
 
-            return formatted_results
+                return formatted_results
 
         except Exception as e:
             logger.error(f"Error searching: {str(e)}")
@@ -162,35 +167,25 @@ class VectorStore:
             filename: Name of the file to delete
         """
         try:
-            # Find doc_id(s) associated with the filename
-            # This is a bit inefficient but necessary since we store by chunk
-            # We'll search for chunks with the matching filename metadata
-            
-            # Note: ChromaDB doesn't support deleting by metadata directly in all versions nicely,
-            # but we can get the collection and delete where metadata matches.
-            # However, we stored doc_id in self.documents keys, but those keys are generated from filename.
-            # Let's look at how we generated doc_id: f"{file.filename}_{len(vector_store.documents)}"
-            # This is problematic for deletion because we might have multiple versions or the index changed.
-            # A better way is to search for all chunks where metadata['filename'] == filename
-            
-            # We will iterate through self.documents to find keys matching the filename
-            doc_ids_to_remove = []
-            for doc_id, doc_data in self.documents.items():
-                if doc_data['metadata'].get('filename') == filename:
-                    doc_ids_to_remove.append(doc_id)
-            
-            if not doc_ids_to_remove:
-                logger.warning(f"No document found with filename {filename}")
-                return False
+            with self._lock:
+                # Find doc_id(s) associated with the filename
+                doc_ids_to_remove = []
+                for doc_id, doc_data in self.documents.items():
+                    if doc_data['metadata'].get('filename') == filename:
+                        doc_ids_to_remove.append(doc_id)
 
-            # Delete from ChromaDB
-            # We need to delete all chunks. The IDs are constructed as f"{doc_id}_chunk_{i}"
-            for doc_id in doc_ids_to_remove:
-                self.collection.delete(where={"doc_id": doc_id})
-                del self.documents[doc_id]
-                logger.info(f"Deleted document {doc_id} (filename: {filename})")
-            
-            return True
+                if not doc_ids_to_remove:
+                    logger.warning(f"No document found with filename {filename}")
+                    return False
+
+                # Delete from ChromaDB
+                # We need to delete all chunks. The IDs are constructed as f"{doc_id}_chunk_{i}"
+                for doc_id in doc_ids_to_remove:
+                    self.collection.delete(where={"doc_id": doc_id})
+                    del self.documents[doc_id]
+                    logger.info(f"Deleted document {doc_id} (filename: {filename})")
+
+                return True
 
         except Exception as e:
             logger.error(f"Error deleting document {filename}: {str(e)}")
@@ -224,6 +219,32 @@ class VectorStore:
 
         context = "\n\n".join(context_parts)
         return context, sources
+
+    def list_documents(self) -> List[Dict[str, str]]:
+        """List unique documents and their tags."""
+        with self._lock:
+            unique_docs = {}
+            for doc_data in self.documents.values():
+                metadata = doc_data.get("metadata", {})
+                filename = metadata.get("filename")
+                if not filename:
+                    continue
+                if filename not in unique_docs:
+                    unique_docs[filename] = {
+                        "filename": filename,
+                        "tag": metadata.get("tag") or "Uncategorized"
+                    }
+            return list(unique_docs.values())
+
+    def get_document_paths(self, filename: str) -> List[str]:
+        """Return all stored file paths linked to a logical filename."""
+        with self._lock:
+            paths: List[str] = []
+            for doc_data in self.documents.values():
+                metadata = doc_data.get("metadata", {})
+                if metadata.get("filename") == filename and metadata.get("path"):
+                    paths.append(metadata["path"])
+            return paths
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """

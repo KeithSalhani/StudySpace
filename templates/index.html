@@ -212,6 +212,69 @@
             font-size: 0.875rem;
         }
 
+        .upload-job-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .upload-job {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px;
+            background: var(--sidebar-bg);
+        }
+
+        .upload-job-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 0.78rem;
+        }
+
+        .upload-job-file {
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 180px;
+        }
+
+        .upload-job-stage {
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            margin-bottom: 6px;
+        }
+
+        .upload-job-meta {
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            margin-top: 6px;
+        }
+
+        .upload-job-bar {
+            height: 6px;
+            border-radius: 999px;
+            background: var(--border-color);
+            overflow: hidden;
+        }
+
+        .upload-job-fill {
+            height: 100%;
+            transition: width 0.2s ease;
+            background: var(--primary-color);
+            border-radius: 999px;
+        }
+
+        .upload-job.completed .upload-job-fill {
+            background: #10b981;
+        }
+
+        .upload-job.failed .upload-job-fill {
+            background: #ef4444;
+        }
+
         /* Document List */
         .document-list {
             display: flex;
@@ -1043,6 +1106,12 @@
         const noteInput = document.getElementById('noteInput');
         const addNoteBtn = document.getElementById('addNoteBtn');
         const notesContainer = document.getElementById('notesContainer');
+        const uploadTerminalStates = new Set(['completed', 'failed']);
+        const seenCompletedUploadJobs = new Set();
+        const hiddenCompletedUploadJobs = new Set();
+        const completedUploadHideTimers = new Map();
+        const completedStatusVisibleMs = 4000;
+        let uploadPollingTimer = null;
 
         // Auto-resize textarea
         chatInput.addEventListener('input', function() {
@@ -1208,21 +1277,20 @@
 
         async function handleFileSelect(e) {
             const files = Array.from(e.target.files);
-            handleFiles(files);
+            await handleFiles(files);
+            fileInput.value = '';
         }
 
         async function handleFiles(files) {
-            for (const file of files) {
-                await uploadFile(file);
-            }
-            loadDocuments();
+            if (!files.length) return;
+            ensureUploadPolling();
+            await Promise.all(files.map(file => uploadFile(file)));
+            await loadUploadJobs();
         }
 
         async function uploadFile(file) {
             const formData = new FormData();
             formData.append('file', file);
-
-            uploadStatus.innerHTML = `<p style="color: var(--primary-color);">Uploading ${file.name}...</p>`;
 
             try {
                 const response = await fetch('/upload', {
@@ -1232,19 +1300,131 @@
 
                 const result = await response.json();
 
-                if (response.ok) {
-                    const tagInfo = result.predicted_tag ? ` (Tagged: ${result.predicted_tag})` : '';
-                    uploadStatus.innerHTML = `<p style="color: #10b981;">✅ ${file.name} uploaded${tagInfo}</p>`;
-                } else {
-                    uploadStatus.innerHTML = `<p style="color: #ef4444;">❌ Error: ${result.detail}</p>`;
+                if (!response.ok) {
+                    throw new Error(result.detail || 'Upload failed');
                 }
             } catch (error) {
-                uploadStatus.innerHTML = `<p style="color: #ef4444;">❌ Upload failed</p>`;
+                console.error('Upload failed:', error);
+                alert(`Upload failed for ${file.name}: ${error.message}`);
+            }
+        }
+
+        function escapeHtml(value) {
+            return value.replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
+
+        function renderUploadJobs(jobs) {
+            const visibleJobs = jobs.filter(job => {
+                if (job.status !== 'completed') return true;
+                return !hiddenCompletedUploadJobs.has(job.job_id);
+            });
+
+            if (!visibleJobs.length) {
+                uploadStatus.innerHTML = '';
+                return;
             }
 
-            setTimeout(() => {
-                uploadStatus.innerHTML = '';
-            }, 5000);
+            uploadStatus.innerHTML = `
+                <div class="upload-job-list">
+                    ${visibleJobs.map(job => {
+                        const progress = Math.min(100, Math.max(0, Number(job.progress || 0)));
+                        const safeFilename = escapeHtml(job.filename || 'Unknown file');
+                        const stage = escapeHtml(job.stage || '');
+                        const queueInfo = job.queue_position ? `Queue #${job.queue_position}` : '';
+                        const tagInfo = job.predicted_tag ? `Tag: ${escapeHtml(job.predicted_tag)}` : '';
+                        const timeInfo = typeof job.processing_time_seconds === 'number'
+                            ? `${job.processing_time_seconds.toFixed(2)}s`
+                            : '';
+                        const errorInfo = job.error ? `Error: ${escapeHtml(job.error)}` : '';
+                        const details = [queueInfo, tagInfo, timeInfo, errorInfo].filter(Boolean).join(' • ');
+                        
+                        return `
+                            <div class="upload-job ${job.status}">
+                                <div class="upload-job-header">
+                                    <span class="upload-job-file" title="${safeFilename}">${safeFilename}</span>
+                                    <span>${escapeHtml(job.status)}</span>
+                                </div>
+                                <div class="upload-job-stage">${stage}</div>
+                                <div class="upload-job-bar">
+                                    <div class="upload-job-fill" style="width: ${progress}%;"></div>
+                                </div>
+                                ${details ? `<div class="upload-job-meta">${details}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        async function loadUploadJobs() {
+            try {
+                const response = await fetch('/upload-jobs?limit=50');
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+
+                jobs.forEach(job => {
+                    if (job.status !== 'completed' || hiddenCompletedUploadJobs.has(job.job_id)) {
+                        return;
+                    }
+
+                    const completedAt = job.completed_at ? Date.parse(job.completed_at) : NaN;
+                    const elapsed = Number.isNaN(completedAt) ? 0 : (Date.now() - completedAt);
+                    const remainingMs = Math.max(0, completedStatusVisibleMs - elapsed);
+
+                    if (remainingMs === 0) {
+                        hiddenCompletedUploadJobs.add(job.job_id);
+                        if (completedUploadHideTimers.has(job.job_id)) {
+                            clearTimeout(completedUploadHideTimers.get(job.job_id));
+                            completedUploadHideTimers.delete(job.job_id);
+                        }
+                        return;
+                    }
+
+                    if (!completedUploadHideTimers.has(job.job_id)) {
+                        const timerId = setTimeout(() => {
+                            hiddenCompletedUploadJobs.add(job.job_id);
+                            completedUploadHideTimers.delete(job.job_id);
+                            loadUploadJobs();
+                        }, remainingMs);
+                        completedUploadHideTimers.set(job.job_id, timerId);
+                    }
+                });
+
+                renderUploadJobs(jobs);
+
+                let hasNewCompletedJob = false;
+                jobs.forEach(job => {
+                    if (job.status === 'completed' && !seenCompletedUploadJobs.has(job.job_id)) {
+                        seenCompletedUploadJobs.add(job.job_id);
+                        hasNewCompletedJob = true;
+                    }
+                });
+
+                if (hasNewCompletedJob) {
+                    loadDocuments();
+                }
+
+                const hasActiveJobs = jobs.some(job => !uploadTerminalStates.has(job.status));
+                if (!hasActiveJobs && uploadPollingTimer) {
+                    clearInterval(uploadPollingTimer);
+                    uploadPollingTimer = null;
+                }
+            } catch (error) {
+                console.error('Error loading upload jobs:', error);
+            }
+        }
+
+        function ensureUploadPolling() {
+            if (uploadPollingTimer) return;
+            uploadPollingTimer = setInterval(loadUploadJobs, 2000);
         }
 
         // Document Management
@@ -1279,14 +1459,17 @@
                     // Check if doc is a string or object (handling migration)
                     documentList.innerHTML = data.documents.map(doc => {
                         const name = typeof doc === 'string' ? doc : doc.filename;
-                        const tag = (typeof doc === 'object' && doc.tag) ? `<span class="doc-tag">${doc.tag}</span>` : '';
+                        const safeName = escapeHtml(name);
+                        const safeTag = (typeof doc === 'object' && doc.tag) ? escapeHtml(doc.tag) : '';
+                        const tag = safeTag ? `<span class="doc-tag">${safeTag}</span>` : '';
+                        const encodedName = encodeURIComponent(name);
                         
                         return `<div class="document-item">
                             <div class="doc-info">
-                                <div class="doc-name" title="${name}">${name}</div>
+                                <div class="doc-name" title="${safeName}">${safeName}</div>
                                 ${tag}
                             </div>
-                            <div class="document-delete" onclick="deleteDocument('${name}')" title="Delete">&times;</div>
+                            <div class="document-delete" onclick="deleteDocument(decodeURIComponent('${encodedName}'))" title="Delete">&times;</div>
                         </div>`;
                     }).join('');
                     
@@ -1297,7 +1480,8 @@
                     documentSelect.innerHTML = '<option value="" disabled selected>Select a document...</option>' + 
                         data.documents.map(doc => {
                             const name = typeof doc === 'string' ? doc : doc.filename;
-                            return `<option value="${name}">${name}</option>`;
+                            const safeName = escapeHtml(name);
+                            return `<option value="${safeName}">${safeName}</option>`;
                         }).join('');
                         
                     if (currentSelection && Array.from(documentSelect.options).some(opt => opt.value === currentSelection)) {
@@ -1623,6 +1807,8 @@
         // Initialization
         loadDocuments();
         loadData();
+        loadUploadJobs();
+        ensureUploadPolling();
     </script>
 </body>
 </html>
