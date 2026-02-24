@@ -8,7 +8,7 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from pathlib import Path
 import logging
 from typing import List, Optional
-from classification import Classifier
+from app.core.classification import Classifier
 
 logger = logging.getLogger(__name__)
 

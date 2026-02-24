@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple
 import uuid
 import threading
 
-from config import COLLECTION_NAME, CHROMA_DB_DIR, EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, DEFAULT_SEARCH_RESULTS
+from app.config import COLLECTION_NAME, CHROMA_DB_DIR, EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, DEFAULT_SEARCH_RESULTS
 
 logger = logging.getLogger(__name__)
 
