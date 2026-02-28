@@ -8,7 +8,7 @@ import os
 # Add parent directory to path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flashcard_generator import FlashcardGenerator
+from app.core.flashcard_generator import FlashcardGenerator
 
 class TestFlashcardGenerator(unittest.TestCase):
     def setUp(self):
@@ -16,7 +16,7 @@ class TestFlashcardGenerator(unittest.TestCase):
         self.mock_api_key = "test_key"
         
         # Patch google.generativeai
-        self.patcher = patch('flashcard_generator.genai')
+        self.patcher = patch('app.core.flashcard_generator.genai')
         self.mock_genai = self.patcher.start()
         
         self.flashcard_generator = FlashcardGenerator(self.mock_processed_dir, self.mock_api_key)

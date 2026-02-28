@@ -1,15 +1,15 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from document_processor import DocumentProcessor
+from app.core.ingestion import DocumentProcessor
 
 @pytest.fixture
 def mock_markitdown():
-    with patch('document_processor.MarkItDown') as MockMarkItDown:
+    with patch('app.core.ingestion.DocumentConverter') as MockMarkItDown:
         yield MockMarkItDown
 
 @pytest.fixture
 def mock_classifier():
-    with patch('document_processor.Classifier') as MockClassifier:
+    with patch('app.core.ingestion.Classifier') as MockClassifier:
         yield MockClassifier
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def test_process_document_success(document_processor, mock_markitdown):
     # Setup
     mock_instance = mock_markitdown.return_value
     mock_result = MagicMock()
-    mock_result.text_content = "Processed content"
+    mock_result.document.export_to_markdown.return_value = "Processed content"
     mock_instance.convert.return_value = mock_result
     
     with patch('pathlib.Path.exists', return_value=True):

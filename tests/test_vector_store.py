@@ -1,22 +1,22 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import numpy as np
-from vector_store import VectorStore
+from app.db.vector_store import VectorStore
 
 @pytest.fixture
 def mock_chroma():
-    with patch('vector_store.chromadb.PersistentClient') as MockClient:
+    with patch('app.db.vector_store.chromadb.PersistentClient') as MockClient:
         yield MockClient
 
 @pytest.fixture
 def mock_sentence_transformer():
-    with patch('vector_store.SentenceTransformer') as MockST:
+    with patch('app.db.vector_store.SentenceTransformer') as MockST:
         yield MockST
 
 @pytest.fixture
 def vector_store(mock_chroma, mock_sentence_transformer, tmp_path):
-    with patch('vector_store.COLLECTION_NAME', 'test_collection'), \
-         patch('vector_store.CHROMA_DB_DIR', tmp_path):
+    with patch('app.db.vector_store.COLLECTION_NAME', 'test_collection'), \
+         patch('app.db.vector_store.CHROMA_DB_DIR', tmp_path):
         store = VectorStore()
         # Reset mocks for cleaner testing
         store.collection = MagicMock()
