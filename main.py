@@ -280,6 +280,15 @@ class UploadJobManager:
                 processing_time_seconds=elapsed,
                 error=str(exc),
             )
+            try:
+                if file_path.exists():
+                    file_path.unlink(missing_ok=True)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to remove failed upload file %s: %s",
+                    file_path,
+                    cleanup_exc,
+                )
         finally:
             with self._lock:
                 self._trim_history_unlocked()

@@ -132,28 +132,29 @@ class VectorStore:
             List of search results with documents, metadata, and distances
         """
         try:
-            with self._lock:
-                # Generate embedding for query
-                query_embedding = self.embedding_model.encode([query])[0]
+            # Generate embedding for query outside the store lock so read queries
+            # do not block writes while CPU-bound embedding work runs.
+            query_embedding = self.embedding_model.encode([query])[0]
 
+            with self._lock:
                 # Search in collection
                 results = self.collection.query(
                     query_embeddings=[query_embedding.tolist()],
                     n_results=n_results
                 )
 
-                # Format results
-                formatted_results = []
-                for i in range(len(results['documents'][0])):
-                    result = {
-                        "document": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i],
-                        "distance": results['distances'][0][i] if 'distances' in results else None,
-                        "id": results['ids'][0][i]
-                    }
-                    formatted_results.append(result)
+            # Format results
+            formatted_results = []
+            for i in range(len(results['documents'][0])):
+                result = {
+                    "document": results['documents'][0][i],
+                    "metadata": results['metadatas'][0][i],
+                    "distance": results['distances'][0][i] if 'distances' in results else None,
+                    "id": results['ids'][0][i]
+                }
+                formatted_results.append(result)
 
-                return formatted_results
+            return formatted_results
 
         except Exception as e:
             logger.error(f"Error searching: {str(e)}")
@@ -239,11 +240,16 @@ class VectorStore:
     def get_document_paths(self, filename: str) -> List[str]:
         """Return all stored file paths linked to a logical filename."""
         with self._lock:
+            seen_paths = set()
             paths: List[str] = []
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
-                if metadata.get("filename") == filename and metadata.get("path"):
-                    paths.append(metadata["path"])
+                if metadata.get("filename") != filename:
+                    continue
+                path = metadata.get("path")
+                if path and path not in seen_paths:
+                    seen_paths.add(path)
+                    paths.append(path)
             return paths
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
