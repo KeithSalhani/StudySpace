@@ -86,3 +86,30 @@ def test_delete_document_not_found(vector_store):
     vector_store.documents = {}
     assert vector_store.delete_document("missing.txt") is False
 
+def test_list_documents_returns_unique_filenames_with_tag_fallback(vector_store):
+    vector_store.documents = {
+        "doc1": {"metadata": {"filename": "alpha.pdf", "tag": "Security"}},
+        "doc2": {"metadata": {"filename": "alpha.pdf", "tag": "ShouldBeIgnored"}},
+        "doc3": {"metadata": {"filename": "beta.pdf"}},
+        "doc4": {"metadata": {"path": "/tmp/no-filename.pdf"}},
+    }
+
+    docs = vector_store.list_documents()
+    docs_by_name = {item["filename"]: item for item in docs}
+
+    assert len(docs) == 2
+    assert docs_by_name["alpha.pdf"]["tag"] == "Security"
+    assert docs_by_name["beta.pdf"]["tag"] == "Uncategorized"
+
+def test_get_document_paths_filters_by_filename_and_deduplicates(vector_store):
+    vector_store.documents = {
+        "doc1": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a1.pdf"}},
+        "doc2": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a1.pdf"}},
+        "doc3": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a2.pdf"}},
+        "doc4": {"metadata": {"filename": "beta.pdf", "path": "/tmp/b1.pdf"}},
+        "doc5": {"metadata": {"filename": "alpha.pdf"}},
+    }
+
+    paths = vector_store.get_document_paths("alpha.pdf")
+
+    assert paths == ["/tmp/a1.pdf", "/tmp/a2.pdf"]
