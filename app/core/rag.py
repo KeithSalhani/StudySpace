@@ -5,7 +5,7 @@ import google.generativeai as genai
 import os
 import logging
 from typing import List, Dict, Any, Tuple
-from vector_store import VectorStore
+from app.db.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 

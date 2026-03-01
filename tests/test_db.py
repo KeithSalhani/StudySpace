@@ -1,7 +1,7 @@
 import pytest
 import json
 import os
-from db import JSONDatabase
+from app.db.metadata import JSONDatabase
 
 @pytest.fixture
 def db_file(tmp_path):

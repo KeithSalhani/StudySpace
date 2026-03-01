@@ -9,9 +9,9 @@ from pathlib import Path
 # Set a dummy API key for demo
 os.environ['GEMINI_API_KEY'] = 'demo_key_for_testing'
 
-from document_processor import DocumentProcessor
-from vector_store import VectorStore
-from rag_chat import RAGChat
+from app.core.ingestion import DocumentProcessor
+from app.db.vector_store import VectorStore
+from app.core.rag import RAGChat
 
 def demo():
     print("🎓 Student Study Hub RAG Chat Demo")

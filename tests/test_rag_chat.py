@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from rag_chat import RAGChat
+from app.core.rag import RAGChat
 
 @pytest.fixture
 def mock_vector_store():
@@ -8,7 +8,7 @@ def mock_vector_store():
 
 @pytest.fixture
 def mock_genai():
-    with patch('rag_chat.genai') as mock:
+    with patch('app.core.rag.genai') as mock:
         yield mock
 
 @pytest.fixture

@@ -8,3 +8,6 @@ google-generativeai
 python-multipart
 jinja2
 aiofiles
+pytest
+httpx
+pytest-asyncio

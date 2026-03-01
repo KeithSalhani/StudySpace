@@ -25,19 +25,25 @@ A comprehensive RAG (Retrieval-Augmented Generation) chat application designed f
 ## Project Structure
 
 ```
-├── main.py                 # FastAPI application entry point & API routes
-├── config.py               # Configuration settings (paths, model names, keys)
-├── document_processor.py   # Handles file reading and MarkItDown conversion
-├── classification.py       # Zero-shot document classification logic
-├── vector_store.py         # ChromaDB wrapper for adding/searching documents
-├── rag_chat.py            # RAG implementation using Gemini API
-├── db.py                   # JSON database manager for tags and notes
-├── db.json                 # Local storage for tags and notes (auto-created)
-├── requirements.txt        # Python dependencies
-├── templates/              # HTML templates for the web UI
-├── static/                 # Static assets (CSS, JS)
-├── uploads/                # Directory for uploaded source files
-└── chroma_db/             # Directory for Vector database persistence
+├── app/
+│   ├── main.py                 # FastAPI application entry point & API routes
+│   ├── config.py               # Configuration settings (paths, model names, keys)
+│   ├── core/                   # Core business logic
+│   │   ├── ingestion.py        # Handles file reading and Docling conversion
+│   │   ├── classification.py   # Zero-shot document classification logic
+│   │   ├── rag.py              # RAG implementation using Gemini API
+│   │   ├── quiz_generator.py   # AI-powered quiz generation
+│   │   └── flashcard_generator.py # AI-powered flashcard generation
+│   ├── db/                     # Data access layer
+│   │   ├── vector_store.py     # ChromaDB wrapper for adding/searching documents
+│   │   └── metadata.py         # JSON database manager for tags and notes
+│   ├── templates/              # HTML templates for the web UI
+│   └── static/                 # Static assets (CSS, JS)
+├── db.json                     # Local storage for tags and notes (auto-created)
+├── requirements.txt            # Python dependencies
+├── uploads/                    # Directory for uploaded source files
+├── chroma_db/                  # Directory for Vector database persistence
+└── tests/                      # Pytest suite
 ```
 
 ## Installation & Setup
@@ -78,9 +84,9 @@ GEMINI_API_KEY=your_api_key_here
 ### Start the Application
 
 ```bash
-python main.py
+uvicorn app.main:app --reload
 ```
-The server will start at `http://0.0.0.0:8000`.
+The server will start at `http://127.0.0.1:8000`.
 
 ### Using the Interface
 

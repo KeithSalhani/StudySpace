@@ -20,13 +20,13 @@ import threading
 import time
 import uuid
 
-from config import GEMINI_API_KEY, UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR, PROCESSED_DIR
-from document_processor import DocumentProcessor
-from vector_store import VectorStore
-from rag_chat import RAGChat
-from quiz_generator import QuizGenerator
-from flashcard_generator import FlashcardGenerator
-from db import JSONDatabase
+from app.config import GEMINI_API_KEY, UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR, PROCESSED_DIR
+from app.core.ingestion import DocumentProcessor
+from app.db.vector_store import VectorStore
+from app.core.rag import RAGChat
+from app.core.quiz_generator import QuizGenerator
+from app.core.flashcard_generator import FlashcardGenerator
+from app.db.metadata import JSONDatabase
 
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,10 @@
 import pytest
 from unittest.mock import patch
-from classification import Classifier
+from app.core.classification import Classifier
 
 @pytest.fixture
 def classifier():
-    with patch('classification.pipeline') as mock_pipeline:
+    with patch('app.core.classification.pipeline') as mock_pipeline:
         yield Classifier()
 
 def test_classify_success(classifier):

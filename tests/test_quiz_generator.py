@@ -8,7 +8,7 @@ import os
 # Add parent directory to path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from quiz_generator import QuizGenerator
+from app.core.quiz_generator import QuizGenerator
 
 class TestQuizGenerator(unittest.TestCase):
     def setUp(self):
@@ -16,7 +16,7 @@ class TestQuizGenerator(unittest.TestCase):
         self.mock_api_key = "test_key"
         
         # Patch google.generativeai
-        self.patcher = patch('quiz_generator.genai')
+        self.patcher = patch('app.core.quiz_generator.genai')
         self.mock_genai = self.patcher.start()
         
         self.quiz_generator = QuizGenerator(self.mock_processed_dir, self.mock_api_key)
