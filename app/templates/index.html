@@ -306,6 +306,13 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        
+        .doc-checkbox {
+            margin-right: 8px;
+            cursor: pointer;
+            accent-color: var(--primary-color);
+        }
+        
         .doc-info {
             display: flex;
             align-items: center;
@@ -1466,6 +1473,7 @@
                         
                         return `<div class="document-item">
                             <div class="doc-info">
+                                <input type="checkbox" class="doc-checkbox" value="${safeName}" checked title="Include in search">
                                 <div class="doc-name" title="${safeName}">${safeName}</div>
                                 ${tag}
                             </div>
@@ -1750,6 +1758,12 @@
             chatInput.value = '';
             chatInput.style.height = 'auto'; // Reset height
 
+            // Collect selected files
+            const selectedFiles = [];
+            document.querySelectorAll('.doc-checkbox:checked').forEach(checkbox => {
+                selectedFiles.push(checkbox.value);
+            });
+
             // Show loading
             loading.style.display = 'block';
 
@@ -1759,7 +1773,10 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify({ 
+                        message: message,
+                        selected_files: selectedFiles.length > 0 ? selectedFiles : null
+                    })
                 });
 
                 const result = await response.json();
