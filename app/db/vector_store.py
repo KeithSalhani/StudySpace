@@ -120,13 +120,14 @@ class VectorStore:
             logger.error(f"Error adding document {doc_id}: {str(e)}")
             raise
 
-    def search(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, n_results: int = 5, selected_files: List[str] = None) -> List[Dict[str, Any]]:
         """
         Search for relevant documents
 
         Args:
             query: Search query
             n_results: Number of results to return
+            selected_files: Optional list of filenames to filter by
 
         Returns:
             List of search results with documents, metadata, and distances
@@ -136,12 +137,19 @@ class VectorStore:
             # do not block writes while CPU-bound embedding work runs.
             query_embedding = self.embedding_model.encode([query])[0]
 
+            kwargs = {
+                "query_embeddings": [query_embedding.tolist()],
+                "n_results": n_results
+            }
+            if selected_files:
+                if len(selected_files) == 1:
+                    kwargs["where"] = {"filename": selected_files[0]}
+                else:
+                    kwargs["where"] = {"filename": {"$in": selected_files}}
+
             with self._lock:
                 # Search in collection
-                results = self.collection.query(
-                    query_embeddings=[query_embedding.tolist()],
-                    n_results=n_results
-                )
+                results = self.collection.query(**kwargs)
 
             # Format results
             formatted_results = []
@@ -192,18 +200,19 @@ class VectorStore:
             logger.error(f"Error deleting document {filename}: {str(e)}")
             raise
 
-    def get_relevant_context(self, query: str, n_results: int = DEFAULT_SEARCH_RESULTS) -> Tuple[str, List[Dict[str, Any]]]:
+    def get_relevant_context(self, query: str, n_results: int = DEFAULT_SEARCH_RESULTS, selected_files: List[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Get relevant context for RAG
 
         Args:
             query: Search query
             n_results: Number of results to retrieve
+            selected_files: Optional list of filenames to filter by
 
         Returns:
             Tuple of (context_string, sources_list)
         """
-        results = self.search(query, n_results)
+        results = self.search(query, n_results, selected_files=selected_files)
 
         # Combine documents into context
         context_parts = []

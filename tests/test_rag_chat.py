@@ -30,7 +30,7 @@ def test_chat_success(rag_chat, mock_vector_store, mock_genai):
     # Verify
     assert response == "AI Response"
     assert len(sources) == 1
-    mock_vector_store.get_relevant_context.assert_called_with("Hello")
+    mock_vector_store.get_relevant_context.assert_called_with("Hello", selected_files=None)
     mock_model.generate_content.assert_called_once()
 
 def test_chat_empty_response(rag_chat, mock_vector_store, mock_genai):
@@ -62,3 +62,19 @@ def test_create_prompt_no_context(rag_chat):
     assert "Question?" in prompt
     assert "no relevant context was found" in prompt
 
+def test_chat_with_selected_files(rag_chat, mock_vector_store, mock_genai):
+    # Setup
+    mock_vector_store.get_relevant_context.return_value = ("Context info", [{"source": "doc1"}])
+    
+    mock_model = mock_genai.GenerativeModel.return_value
+    mock_response = MagicMock()
+    mock_response.text = "AI Response"
+    mock_model.generate_content.return_value = mock_response
+    
+    # Execute
+    selected_files = ["file1.pdf", "file2.pdf"]
+    response, sources = rag_chat.chat("Hello", selected_files=selected_files)
+    
+    # Verify
+    assert response == "AI Response"
+    mock_vector_store.get_relevant_context.assert_called_with("Hello", selected_files=selected_files)
