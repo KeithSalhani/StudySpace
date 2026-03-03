@@ -326,6 +326,7 @@ upload_jobs = UploadJobManager(doc_processor, db, vector_store)
 
 class ChatRequest(BaseModel):
     message: str
+    selected_files: Optional[List[str]] = None
 
 
 class ChatResponse(BaseModel):
@@ -417,7 +418,7 @@ async def get_upload_job(job_id: str):
 async def chat(request: ChatRequest):
     """Handle chat requests with RAG"""
     try:
-        response, sources = await asyncio.to_thread(rag_chat.chat, request.message)
+        response, sources = await asyncio.to_thread(rag_chat.chat, request.message, request.selected_files)
         return ChatResponse(response=response, sources=sources)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing chat: {str(e)}")
