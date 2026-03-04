@@ -19,7 +19,7 @@ A comprehensive RAG (Retrieval-Augmented Generation) chat application designed f
 - **Document Processing**: `MarkItDown` for converting various formats to text.
 - **NLP & Classification**: `transformers` pipeline for zero-shot classification.
 - **Vector Store**: `ChromaDB` for storing and querying document embeddings.
-- **LLM Integration**: `google-generativeai` SDK connecting to Gemini 2.5 Flash.
+- **LLM Integration**: `google-genai` SDK connecting to Gemini 2.0 Flash.
 - **Database**: Simple JSON-based storage for tags and notes (`db.json`).
 
 ## Project Structure

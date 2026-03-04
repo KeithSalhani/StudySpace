@@ -14,7 +14,7 @@ The implementation of the Study Hub platform leverages a modern, scalable techno
 
 ### 2.4.3 AI & Machine Learning Integration
 
-**Google Gemini (Generative AI):** The platform utilizes Google's Gemini Pro model via the `google-generativeai` library. Gemini provides the core reasoning and text generation capabilities for the RAG system. Its large context window and multimodal capabilities allow it to effectively synthesize answers based on the retrieved document context.
+**Google Gemini (Generative AI):** The platform utilizes Google's Gemini 2.0 Flash model via the `google-genai` library. Gemini provides the core reasoning and text generation capabilities for the RAG system. Its large context window and multimodal capabilities allow it to effectively synthesize answers based on the retrieved document context.
 
 **SentenceTransformers (Embeddings):** To convert text into vector representations, the system employs the `sentence-transformers` library. These models map sentences and paragraphs to a 384-dimensional dense vector space, capturing semantic meaning rather than just keyword matching. This ensures that user queries retrieve conceptually relevant document chunks even when exact wording differs.
 
