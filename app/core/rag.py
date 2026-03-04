@@ -1,7 +1,7 @@
 """
-RAG Chat module using Gemini-2.5 Flash
+RAG Chat module using Gemini-2.0 Flash
 """
-import google.generativeai as genai
+from google import genai
 import os
 import logging
 from typing import List, Dict, Any, Tuple
@@ -25,12 +25,11 @@ class RAGChat:
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable must be set")
 
-        genai.configure(api_key=api_key)
+        # Initialize Google Gen AI client
+        self.client = genai.Client(api_key=api_key)
+        self.model_id = 'gemini-2.0-flash'
 
-        # Initialize Gemini model
-        self.model = genai.GenerativeModel('gemini-2.5-flash')  # Using flash instead of pro for speed
-
-        logger.info("RAG Chat initialized with Gemini")
+        logger.info("RAG Chat initialized with Gemini 2.0 Flash")
 
     def chat(self, message: str, selected_files: List[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
         """
@@ -51,7 +50,10 @@ class RAGChat:
             prompt = self._create_prompt(message, context)
 
             # Generate response with Gemini
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt
+            )
 
             if not response.text:
                 raise ValueError("Empty response from Gemini")
