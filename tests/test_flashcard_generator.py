@@ -15,9 +15,13 @@ class TestFlashcardGenerator(unittest.TestCase):
         self.mock_processed_dir = Path("/tmp/processed")
         self.mock_api_key = "test_key"
         
-        # Patch google.generativeai
+        # Patch google.genai
         self.patcher = patch('app.core.flashcard_generator.genai')
         self.mock_genai = self.patcher.start()
+        
+        # Mock client and its models attribute
+        self.mock_client = MagicMock()
+        self.mock_genai.Client.return_value = self.mock_client
         
         self.flashcard_generator = FlashcardGenerator(self.mock_processed_dir, self.mock_api_key)
 
@@ -26,8 +30,8 @@ class TestFlashcardGenerator(unittest.TestCase):
 
     def test_init(self):
         """Test initialization"""
-        self.mock_genai.configure.assert_called_with(api_key="test_key")
-        self.mock_genai.GenerativeModel.assert_called_with('gemini-2.5-flash')
+        self.mock_genai.Client.assert_called_with(api_key="test_key")
+        self.assertEqual(self.flashcard_generator.model_id, 'gemini-2.0-flash')
 
     @patch('builtins.open', new_callable=mock_open, read_data="Test content")
     @patch('pathlib.Path.exists')
@@ -48,16 +52,17 @@ class TestFlashcardGenerator(unittest.TestCase):
             ]
         }
         mock_response.text = json.dumps(expected_flashcards)
-        self.flashcard_generator.model.generate_content.return_value = mock_response
+        self.mock_client.models.generate_content.return_value = mock_response
 
         flashcards = self.flashcard_generator.generate_flashcards("test_doc.pdf")
         
         self.assertEqual(flashcards, expected_flashcards)
-        self.flashcard_generator.model.generate_content.assert_called_once()
+        self.mock_client.models.generate_content.assert_called_once()
         
-        # Verify prompt contains content
-        args, kwargs = self.flashcard_generator.model.generate_content.call_args
-        self.assertIn("Test content", args[0])
+        # Verify call contains correct model and prompt
+        args, kwargs = self.mock_client.models.generate_content.call_args
+        self.assertEqual(kwargs['model'], 'gemini-2.0-flash')
+        self.assertIn("Test content", kwargs['contents'])
 
     @patch('pathlib.Path.exists')
     def test_generate_flashcards_file_not_found(self, mock_exists):
