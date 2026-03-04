@@ -1,7 +1,7 @@
 """
 Quiz Generator module using Gemini
 """
-import google.generativeai as genai
+from google import genai
 import os
 import json
 import logging
@@ -26,13 +26,11 @@ class QuizGenerator:
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable must be set")
 
-        genai.configure(api_key=api_key)
+        # Initialize Google Gen AI client
+        self.client = genai.Client(api_key=api_key)
+        self.model_id = 'gemini-2.0-flash'
         
-        # Initialize Gemini model
-        # Using flash for speed/cost, but ensuring it can handle JSON output
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        logger.info("Quiz Generator initialized")
+        logger.info("Quiz Generator initialized with Gemini 2.0 Flash")
 
     def generate_quiz(self, filename: str, num_questions: int = 5, difficulty: str = "Medium") -> Dict[str, Any]:
         """
@@ -48,13 +46,9 @@ class QuizGenerator:
         """
         try:
             # 1. Read the document content
-            # The filename might be the original PDF name, so we need to find the corresponding MD file
-            # In main.py, we will save it as {filename}.md
             md_path = self.processed_dir / f"{filename}.md"
             
             if not md_path.exists():
-                # Fallback: try without .md extension if it was saved differently or check for original filename
-                # For now, assume strict naming convention from main.py
                 raise FileNotFoundError(f"Processed document not found: {md_path}")
                 
             with open(md_path, 'r', encoding='utf-8') as f:
@@ -67,9 +61,12 @@ class QuizGenerator:
             prompt = self._create_quiz_prompt(content, num_questions, difficulty)
             
             # 3. Call Gemini
-            response = self.model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json"
+                }
             )
             
             # 4. Parse Response
@@ -106,5 +103,5 @@ class QuizGenerator:
         Ensure the questions are relevant to the key concepts in the text.
         
         Text content:
-        {content[:30000]}  # Truncate to avoid context limit if necessary, though 2.5 flash has large context
+        {content[:30000]}
         """

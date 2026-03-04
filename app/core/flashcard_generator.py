@@ -1,7 +1,7 @@
 """
 Flashcard Generator module using Gemini
 """
-import google.generativeai as genai
+from google import genai
 import os
 import json
 import logging
@@ -26,12 +26,11 @@ class FlashcardGenerator:
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable must be set")
 
-        genai.configure(api_key=api_key)
+        # Initialize Google Gen AI client
+        self.client = genai.Client(api_key=api_key)
+        self.model_id = 'gemini-2.0-flash'
         
-        # Initialize Gemini model
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        logger.info("Flashcard Generator initialized")
+        logger.info("Flashcard Generator initialized with Gemini 2.0 Flash")
 
     def generate_flashcards(self, filename: str, num_cards: int = 10) -> Dict[str, Any]:
         """
@@ -61,9 +60,12 @@ class FlashcardGenerator:
             prompt = self._create_flashcard_prompt(content, num_cards)
             
             # 3. Call Gemini
-            response = self.model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json"
+                }
             )
             
             # 4. Parse Response
