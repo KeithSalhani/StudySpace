@@ -4,7 +4,7 @@ chromadb
 sentence-transformers
 numpy
 markitdown
-google-generativeai
+google-genai
 python-multipart
 jinja2
 aiofiles
