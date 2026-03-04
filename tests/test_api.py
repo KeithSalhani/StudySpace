@@ -10,6 +10,14 @@ from app.main import app
 
 client = TestClient(app)
 
+def test_home_page_serves_react_shell():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="root"' in response.text
+    assert '/static/dist/assets/index.js' in response.text
+    assert '/static/dist/assets/index.css' in response.text
+
 @patch("app.main.rag_chat")
 def test_chat_endpoint_with_selected_files(mock_rag_chat):
     # Setup mock
