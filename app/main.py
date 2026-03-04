@@ -35,6 +35,8 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable must be set. Please check config.py")
 
 app = FastAPI(title="Student Study Hub RAG Chat")
+FRONTEND_DIST_DIR = STATIC_DIR / "dist"
+FRONTEND_ENTRY_JS = FRONTEND_DIST_DIR / "assets" / "index.js"
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -371,7 +373,13 @@ def on_shutdown() -> None:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the main chat interface"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "frontend_built": FRONTEND_ENTRY_JS.exists(),
+        },
+    )
 
 
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
