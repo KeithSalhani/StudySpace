@@ -27,9 +27,9 @@ class RAGChat:
 
         # Initialize Google Gen AI client
         self.client = genai.Client(api_key=api_key)
-        self.model_id = 'gemini-2.0-flash'
+        self.model_id = 'gemini-3.1-flash-lite-preview'
 
-        logger.info("RAG Chat initialized with Gemini 2.0 Flash")
+        logger.info("RAG Chat initialized with Gemini 3.1 Flash Lite Preview")
 
     def chat(self, message: str, selected_files: List[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
         """

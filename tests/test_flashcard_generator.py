@@ -31,7 +31,7 @@ class TestFlashcardGenerator(unittest.TestCase):
     def test_init(self):
         """Test initialization"""
         self.mock_genai.Client.assert_called_with(api_key="test_key")
-        self.assertEqual(self.flashcard_generator.model_id, 'gemini-2.0-flash')
+        self.assertEqual(self.flashcard_generator.model_id, 'gemini-3.1-flash-lite-preview')
 
     @patch('builtins.open', new_callable=mock_open, read_data="Test content")
     @patch('pathlib.Path.exists')
@@ -61,7 +61,7 @@ class TestFlashcardGenerator(unittest.TestCase):
         
         # Verify call contains correct model and prompt
         args, kwargs = self.mock_client.models.generate_content.call_args
-        self.assertEqual(kwargs['model'], 'gemini-2.0-flash')
+        self.assertEqual(kwargs['model'], 'gemini-3.1-flash-lite-preview')
         self.assertIn("Test content", kwargs['contents'])
 
     @patch('pathlib.Path.exists')

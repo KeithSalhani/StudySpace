@@ -7,7 +7,7 @@
 *   **Frontend:** Jinja2 Templates (Server-side rendering) + Vanilla JavaScript (Interactive elements)
 
 ## AI & Machine Learning
-*   **Large Language Model (LLM):** Google Gemini 2.0 Flash (via `google-genai` SDK)
+*   **Large Language Model (LLM):** Google Gemini 3.1 Flash Lite Preview (via `google-genai` SDK)
 *   **Embedding Model:** `sentence-transformers/all-MiniLM-L6-v2` (Local, CPU-friendly)
 *   **Zero-Shot Classification:** `facebook/bart-large-mnli` (via `transformers` pipeline)
 *   **Document Parsing:** Docling (IBM) for advanced PDF/layout analysis and OCR.
