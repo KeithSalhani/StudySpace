@@ -927,7 +927,7 @@ export default function App() {
 
               <section className="section">
                 <div className="section-title">Tools</div>
-                <button className="studio-card" type="button" disabled>
+                <button className="studio-card audio-card" type="button" disabled>
                   <div className="studio-card-icon">🎧</div>
                   <div>
                     <div className="studio-card-title">Audio Overview</div>
@@ -935,7 +935,7 @@ export default function App() {
                   </div>
                 </button>
                 <button
-                  className="studio-card"
+                  className="studio-card quiz-card"
                   type="button"
                   disabled={!hasStudioSelection}
                   onClick={() => void handleGenerateQuiz()}
@@ -947,7 +947,7 @@ export default function App() {
                   </div>
                 </button>
                 <button
-                  className="studio-card"
+                  className="studio-card flashcard-card"
                   type="button"
                   disabled={!hasStudioSelection}
                   onClick={() => void handleGenerateFlashcards()}
