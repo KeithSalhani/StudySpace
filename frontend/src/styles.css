@@ -21,14 +21,14 @@
 
 body.dark-mode {
   --bg: #101418;
-  --panel: #192129;
-  --panel-strong: #202a33;
-  --panel-muted: #11181f;
-  --surface: #202a33;
-  --surface-strong: #24303a;
+  --panel: #18212a;
+  --panel-strong: #1e2933;
+  --panel-muted: #111922;
+  --surface: #202b36;
+  --surface-strong: #24313d;
   --text: #f4f7fb;
-  --text-muted: #d4dbe2;
-  --text-soft: #9ca9b3;
+  --text-muted: #c3ced8;
+  --text-soft: #8d9aa6;
   --border: rgba(255, 255, 255, 0.12);
   --accent: #34d399;
   --accent-hover: #21b77d;
@@ -91,6 +91,12 @@ button {
   overflow: hidden;
 }
 
+body.dark-mode .panel {
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
 .sidebar,
 .studio {
   display: flex;
@@ -107,6 +113,12 @@ button {
   background:
     radial-gradient(circle at top left, rgba(13, 139, 126, 0.08), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent);
+}
+
+body.dark-mode .panel-header {
+  background:
+    radial-gradient(circle at top left, rgba(52, 211, 153, 0.1), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
 }
 
 .brand {
@@ -157,6 +169,11 @@ button {
   background: var(--panel-strong);
   color: var(--text);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+body.dark-mode .theme-toggle {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .panel-body {
@@ -338,6 +355,15 @@ button {
     0 6px 14px rgba(38, 28, 18, 0.04);
 }
 
+body.dark-mode .document-item,
+body.dark-mode .note-card,
+body.dark-mode .studio-card,
+body.dark-mode .upload-job {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
 .document-item {
   padding: 10px 12px;
 }
@@ -491,6 +517,12 @@ button {
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), transparent);
 }
 
+body.dark-mode .chat-header {
+  background:
+    radial-gradient(circle at top left, rgba(52, 211, 153, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
+}
+
 .chat-header-row {
   display: flex;
   align-items: center;
@@ -519,6 +551,13 @@ button {
     var(--panel);
 }
 
+body.dark-mode .chat-body {
+  background:
+    radial-gradient(circle at top left, rgba(52, 211, 153, 0.04), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%),
+    #14202b;
+}
+
 .chat-hero {
   padding: 22px;
   border-radius: 24px;
@@ -527,6 +566,13 @@ button {
     radial-gradient(circle at top left, rgba(13, 139, 126, 0.16), transparent 30%),
     linear-gradient(180deg, #ffffff, #f3ebdc);
   box-shadow: 0 10px 24px rgba(54, 40, 24, 0.08);
+}
+
+body.dark-mode .chat-hero {
+  background:
+    radial-gradient(circle at top left, rgba(52, 211, 153, 0.12), transparent 30%),
+    linear-gradient(180deg, #1f2b35, #18212a);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
 }
 
 .chat-hero-badge {
@@ -547,6 +593,7 @@ button {
   font-size: 2.25rem;
   line-height: 0.95;
   letter-spacing: -0.04em;
+  color: var(--text);
 }
 
 .chat-hero p {
@@ -554,6 +601,14 @@ button {
   max-width: 62ch;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+body.dark-mode .chat-hero h2 {
+  color: #f4f7fb;
+}
+
+body.dark-mode .chat-hero p {
+  color: #c7d1db;
 }
 
 .starter-grid {
@@ -573,6 +628,10 @@ button {
   font-weight: 500;
   line-height: 1.45;
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+body.dark-mode .starter-card {
+  background: #20303d;
 }
 
 .starter-card:hover {
@@ -602,6 +661,22 @@ button {
   align-self: flex-start;
   background: #ffffff;
   box-shadow: 0 10px 24px rgba(54, 40, 24, 0.06);
+}
+
+body.dark-mode .message.bot {
+  background: #eff3f7;
+  color: #1b2530;
+}
+
+body.dark-mode .message.bot .message-sender,
+body.dark-mode .message.bot .message-body,
+body.dark-mode .message.bot .source-list-label,
+body.dark-mode .message.bot .source-pill {
+  color: #1b2530;
+}
+
+body.dark-mode .message.bot .source-pill {
+  background: #dfe7ee;
 }
 
 .message-sender {
@@ -683,6 +758,10 @@ button {
   background: linear-gradient(180deg, #fffdf8, #f4ecdf);
 }
 
+body.dark-mode .studio-card {
+  background: linear-gradient(180deg, #22303b, #1b252f);
+}
+
 .studio-card-icon {
   width: 44px;
   height: 44px;
@@ -711,6 +790,21 @@ button {
 .flashcard-card .studio-card-icon {
   background: rgba(13, 139, 126, 0.14);
   color: #0d8b7e;
+}
+
+body.dark-mode .audio-card .studio-card-icon {
+  background: rgba(96, 165, 250, 0.16);
+  color: #7dc0ff;
+}
+
+body.dark-mode .quiz-card .studio-card-icon {
+  background: rgba(251, 146, 60, 0.16);
+  color: #ffb57a;
+}
+
+body.dark-mode .flashcard-card .studio-card-icon {
+  background: rgba(52, 211, 153, 0.18);
+  color: #6fe7ba;
 }
 
 .studio-card[disabled] {
