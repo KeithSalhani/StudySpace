@@ -253,10 +253,26 @@ export default function App() {
   const chatBodyRef = useRef(null);
   const seenCompletedJobsRef = useRef(new Set());
 
+  function showError(message) {
+    setErrorBanner(message);
+  }
+
   useEffect(() => {
     document.body.classList.toggle("dark-mode", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!errorBanner) {
+      return undefined;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setErrorBanner("");
+    }, 4500);
+
+    return () => window.clearTimeout(timerId);
+  }, [errorBanner]);
 
   useEffect(() => {
     void loadTagsAndNotes();
@@ -300,7 +316,7 @@ export default function App() {
           : []
       );
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
@@ -326,7 +342,7 @@ export default function App() {
         return next;
       });
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
@@ -348,7 +364,7 @@ export default function App() {
         await loadDocumentsList();
       }
     } catch (error) {
-      setErrorBanner(error.message);
+      console.error("Upload polling failed:", error);
     }
   }
 
@@ -364,7 +380,7 @@ export default function App() {
       try {
         await uploadDocument(file);
       } catch (error) {
-        setErrorBanner(`Upload failed for ${file.name}: ${error.message}`);
+        showError(`Upload failed for ${file.name}: ${error.message}`);
       }
     }
 
@@ -382,7 +398,7 @@ export default function App() {
       setTags((prev) => [...prev, value]);
       setTagDraft("");
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
@@ -391,7 +407,7 @@ export default function App() {
       await removeTag(tag);
       setTags((prev) => prev.filter((item) => item !== tag));
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
@@ -406,7 +422,7 @@ export default function App() {
       setNotes((prev) => [payload.note, ...prev]);
       setNoteDraft("");
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
@@ -415,7 +431,7 @@ export default function App() {
       await removeNote(noteId);
       setNotes((prev) => prev.filter((note) => note.id !== noteId));
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
@@ -428,7 +444,7 @@ export default function App() {
       await deleteDocument(filename);
       await loadDocumentsList();
     } catch (error) {
-      setErrorBanner(error.message);
+      showError(error.message);
     }
   }
 
