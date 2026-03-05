@@ -51,6 +51,12 @@ function autoResize(textarea) {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
 }
 
+const starterQuestions = [
+  "Summarize the most important ideas in my selected documents.",
+  "Generate a study checklist from the uploaded material.",
+  "Explain the key concepts like I am revising for an exam."
+];
+
 function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
   const cards = state.data?.cards || [];
   const currentCard = cards[state.index];
@@ -799,15 +805,44 @@ export default function App() {
 
         <main className="panel chat-panel">
           <div className="chat-header">
-            <div className="chat-title">AI Assistant</div>
-            <div className="header-subtitle">
-              Ask questions against the currently selected document set.
+            <div className="chat-header-row">
+              <div>
+                <div className="chat-title">AI Assistant</div>
+                <div className="header-subtitle">
+                  Ask questions against the currently selected document set.
+                </div>
+              </div>
+              <div className="chat-status-pill">
+                {selectedFiles.size} source{selectedFiles.size === 1 ? "" : "s"} active
+              </div>
             </div>
             {errorBanner ? (
               <div className="helper-text error-text top-gap">{errorBanner}</div>
             ) : null}
           </div>
           <div className="chat-body" ref={chatBodyRef}>
+            {chatMessages.length === 1 ? (
+              <section className="chat-hero">
+                <div className="chat-hero-badge">Study Session</div>
+                <h2>Turn your documents into something you can actually revise.</h2>
+                <p>
+                  Ask for summaries, exam-style explanations, flashcards, or focused answers
+                  against just the files you have checked in the left panel.
+                </p>
+                <div className="starter-grid">
+                  {starterQuestions.map((question) => (
+                    <button
+                      key={question}
+                      className="starter-card"
+                      type="button"
+                      onClick={() => setChatInput(question)}
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {chatMessages.map((message) => (
               <article key={message.id} className={`message ${message.type}`}>
                 <div className="message-sender">

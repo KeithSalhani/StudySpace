@@ -54,9 +54,9 @@ body {
   margin: 0;
   font-family: "Space Grotesk", sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 22%),
-    radial-gradient(circle at top right, rgba(194, 65, 12, 0.14), transparent 24%),
-    linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 88%, #ffffff 12%));
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 20%),
+    radial-gradient(circle at 85% 12%, rgba(194, 65, 12, 0.12), transparent 18%),
+    linear-gradient(180deg, #f5f0e7, var(--bg));
   color: var(--text);
 }
 
@@ -73,14 +73,14 @@ button {
 
 .app-shell {
   min-height: 100vh;
-  padding: 20px;
+  padding: 16px;
 }
 
 .app-frame {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(260px, 320px);
-  gap: 18px;
-  min-height: calc(100vh - 40px);
+  gap: 14px;
+  min-height: calc(100vh - 32px);
 }
 
 .panel {
@@ -102,8 +102,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 22px 22px 18px;
+  padding: 18px 18px 16px;
   border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.05), transparent);
 }
 
 .brand {
@@ -154,7 +155,7 @@ button {
 }
 
 .panel-body {
-  padding: 20px 22px 22px;
+  padding: 16px 18px 18px;
   overflow-y: auto;
   min-height: 0;
 }
@@ -191,10 +192,10 @@ button {
   display: grid;
   gap: 8px;
   place-items: center;
-  padding: 22px 16px;
+  padding: 18px 14px;
   border-radius: 22px;
   border: 1.5px dashed var(--border);
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 85%, white 15%));
   text-align: center;
   transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
@@ -325,6 +326,10 @@ button {
 .studio-card,
 .upload-job {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.document-item {
+  padding: 10px 12px;
 }
 
 .pill {
@@ -469,17 +474,96 @@ button {
 }
 
 .chat-header {
-  padding: 22px 26px 18px;
+  padding: 18px 22px 16px;
   border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(15, 118, 110, 0.04), transparent);
+}
+
+.chat-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.chat-status-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .chat-body {
-  padding: 22px 26px;
+  padding: 20px 22px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   min-height: 0;
+}
+
+.chat-hero {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 28%),
+    linear-gradient(180deg, var(--panel-strong), var(--surface));
+}
+
+.chat-hero-badge {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.chat-hero h2 {
+  margin: 14px 0 10px;
+  max-width: 18ch;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.chat-hero p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.starter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.starter-card {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  text-align: left;
+  color: var(--text);
+  font-weight: 500;
+  line-height: 1.45;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.starter-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border) 52%);
+  background: color-mix(in srgb, var(--panel-strong) 92%, var(--accent-soft) 8%);
 }
 
 .message {
@@ -545,7 +629,7 @@ button {
 }
 
 .chat-footer {
-  padding: 18px 26px 24px;
+  padding: 16px 22px 20px;
   border-top: 1px solid var(--border);
   background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.08));
 }
@@ -580,6 +664,7 @@ button {
   gap: 14px;
   padding: 16px;
   text-align: left;
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 85%, white 15%));
 }
 
 .studio-card-icon {
@@ -748,6 +833,10 @@ button {
 
   .studio {
     grid-column: 1 / -1;
+  }
+
+  .starter-grid {
+    grid-template-columns: 1fr;
   }
 }
 
