@@ -37,6 +37,7 @@ if not GEMINI_API_KEY:
 app = FastAPI(title="Student Study Hub RAG Chat")
 FRONTEND_DIST_DIR = STATIC_DIR / "dist"
 FRONTEND_ENTRY_JS = FRONTEND_DIST_DIR / "assets" / "index.js"
+FRONTEND_ENTRY_CSS = FRONTEND_DIST_DIR / "assets" / "index.css"
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -51,6 +52,14 @@ rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 db = JSONDatabase()
+
+
+def get_frontend_asset_version() -> str:
+    timestamps = []
+    for path in (FRONTEND_ENTRY_JS, FRONTEND_ENTRY_CSS):
+        if path.exists():
+            timestamps.append(str(int(path.stat().st_mtime)))
+    return "-".join(timestamps) if timestamps else "dev"
 
 
 class UploadJobStatus(str, Enum):
@@ -378,6 +387,7 @@ async def home(request: Request):
         "index.html",
         {
             "frontend_built": FRONTEND_ENTRY_JS.exists(),
+            "frontend_asset_version": get_frontend_asset_version(),
         },
     )
 

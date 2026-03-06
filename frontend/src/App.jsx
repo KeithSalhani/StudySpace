@@ -354,6 +354,10 @@ export default function App() {
   }, [documents, selectedDocument]);
 
   useEffect(() => {
+    if (chatMessages.length <= 1) {
+      return;
+    }
+
     const container = chatBodyRef.current;
     if (container) {
       container.scrollTop = container.scrollHeight;
@@ -736,7 +740,7 @@ export default function App() {
                       {selectedFiles.size} active source{selectedFiles.size === 1 ? "" : "s"}
                     </div>
                   </div>
-                  <h2>Keep the exact material you want in the room.</h2>
+                  <h2>Keep only the right material in play.</h2>
                   <p>
                     Check the documents that should shape the chat. Everything else stays out
                     of the answer stream.
@@ -970,7 +974,7 @@ export default function App() {
         </aside>
 
         <main className="panel chat-panel glass-panel">
-          <div className="chat-header">
+            <div className="chat-header">
             <div className="chat-toolbar mobile-only">
               <SidebarToggle
                 side="left"
@@ -1009,18 +1013,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <div className="desktop-sidebar-actions">
-                <SidebarToggle
-                  side="left"
-                  open={leftSidebarOpen}
-                  onClick={() => setLeftSidebarOpen((prev) => !prev)}
-                />
-                <SidebarToggle
-                  side="right"
-                  open={rightSidebarOpen}
-                  onClick={() => setRightSidebarOpen((prev) => !prev)}
-                />
-              </div>
             </div>
             <div className="selected-stack">
               {selectedDocumentNames.length ? (
@@ -1044,29 +1036,26 @@ export default function App() {
           <div className="chat-body" ref={chatBodyRef}>
             {chatMessages.length === 1 ? (
               <section className="chat-hero">
-                <div className="chat-hero-grid">
-                  <div className="chat-hero-copy">
-                    <div className="chat-hero-badge">Hot desk</div>
-                    <h2>Make your notes hit harder than the original lecture.</h2>
-                    <p>
-                      Ask for concept maps, cram sheets, explainers, comparison tables, or
-                      challenge questions. Keep the thread moving without losing your document
-                      context.
-                    </p>
+                <div className="chat-hero-copy">
+                  <div className="chat-hero-badge">Hot desk</div>
+                  <h2>Ask for the version of this material you actually need.</h2>
+                  <p>
+                    Summaries, explainers, quick quizzes, cram sheets, or challenge questions.
+                    The answer stays grounded in the files you have checked in.
+                  </p>
+                </div>
+                <div className="hero-metrics compact">
+                  <div className="metric-card">
+                    <span className="metric-value">{documents.length}</span>
+                    <span className="metric-label">docs</span>
                   </div>
-                  <div className="hero-metrics">
-                    <div className="metric-card">
-                      <span className="metric-value">{documents.length}</span>
-                      <span className="metric-label">loaded docs</span>
-                    </div>
-                    <div className="metric-card">
-                      <span className="metric-value">{tags.length}</span>
-                      <span className="metric-label">topics tracked</span>
-                    </div>
-                    <div className="metric-card">
-                      <span className="metric-value">{notes.length}</span>
-                      <span className="metric-label">notes saved</span>
-                    </div>
+                  <div className="metric-card">
+                    <span className="metric-value">{tags.length}</span>
+                    <span className="metric-label">topics</span>
+                  </div>
+                  <div className="metric-card">
+                    <span className="metric-value">{notes.length}</span>
+                    <span className="metric-label">notes</span>
                   </div>
                 </div>
                 <div className="starter-grid">
