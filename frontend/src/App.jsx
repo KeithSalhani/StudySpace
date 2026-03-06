@@ -22,16 +22,15 @@ const initialMessages = [
   {
     id: crypto.randomUUID(),
     type: "bot",
-    content:
-      "Your study stack is live. Drop in source material, pick the docs you want active, and I’ll help you turn them into answers, drills, and revision prompts.",
+    content: "Your study stack is live. Add documents and start asking questions.",
     sources: []
   }
 ];
 
 const starterQuestions = [
-  "Give me the fastest revision rundown from the checked docs.",
-  "Turn this material into a last-minute exam prep checklist.",
-  "Explain the difficult bits like a smart tutor, not a textbook."
+  "Give me a quick summary.",
+  "Create an exam prep checklist.",
+  "Explain the difficult concepts."
 ];
 
 function normalizeDocument(doc) {
@@ -371,8 +370,8 @@ export default function App() {
       setNotes(
         Array.isArray(notesPayload.notes)
           ? [...notesPayload.notes].sort(
-              (a, b) => new Date(b.created_at) - new Date(a.created_at)
-            )
+            (a, b) => new Date(b.created_at) - new Date(a.created_at)
+          )
           : []
       );
     } catch (error) {
@@ -645,12 +644,12 @@ export default function App() {
   const frameStyle = isMobile
     ? undefined
     : {
-        gridTemplateColumns: [
-          leftSidebarOpen ? "minmax(280px, 320px)" : "86px",
-          "minmax(0, 1fr)",
-          rightSidebarOpen ? "minmax(280px, 320px)" : "86px"
-        ].join(" ")
-      };
+      gridTemplateColumns: [
+        leftSidebarOpen ? "minmax(280px, 320px)" : "86px",
+        "minmax(0, 1fr)",
+        rightSidebarOpen ? "minmax(280px, 320px)" : "86px"
+      ].join(" ")
+    };
 
   return (
     <div className="app-shell">
@@ -673,10 +672,13 @@ export default function App() {
 
       <div className="app-topbar">
         <div className="topbar-brand">
-          <div className="brand-mark">SS</div>
+          <div className="brand-mark" style={{ background: 'transparent', color: 'var(--accent)', padding: 0, width: 'auto', height: 'auto', display: 'flex', alignItems: 'center' }}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+            </svg>
+          </div>
           <div className="topbar-copy">
-            <span className="eyebrow">Study Space</span>
-            <h1>Turn course chaos into something you can actually revise.</h1>
+            <span className="eyebrow" style={{ fontSize: '1.15rem', fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text)' }}>Study Space</span>
           </div>
         </div>
         <div className="topbar-actions">
@@ -696,21 +698,12 @@ export default function App() {
 
       <div className="app-frame" style={frameStyle}>
         <aside
-          className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"} ${
-            isMobile ? "mobile" : ""
-          }`}
+          className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"} ${isMobile ? "mobile" : ""
+            }`}
         >
           <div className="panel glass-panel">
-            <div className="panel-header">
-              <div className="panel-heading">
-                <div className="section-kicker">Workspace</div>
-                <div>
-                  <div className="panel-title">Source Stack</div>
-                  <div className="header-subtitle">
-                    Upload lecture notes, readings, and handouts in one place.
-                  </div>
-                </div>
-              </div>
+            <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: leftSidebarOpen ? 'space-between' : 'center' }}>
+              {leftSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Workspace</div>}
               <SidebarToggle
                 side="left"
                 open={leftSidebarOpen}
@@ -733,24 +726,10 @@ export default function App() {
 
             <div className="panel-body left-body">
               <div className="sidebar-stack">
-                <section className="hero-card accent-card">
-                  <div className="hero-card-top">
-                    <div className="hero-badge">Ready to build</div>
-                    <div className="helper-text">
-                      {selectedFiles.size} active source{selectedFiles.size === 1 ? "" : "s"}
-                    </div>
-                  </div>
-                  <h2>Keep only the right material in play.</h2>
-                  <p>
-                    Check the documents that should shape the chat. Everything else stays out
-                    of the answer stream.
-                  </p>
-                </section>
 
                 <section className="section">
                   <div className="section-head">
                     <div className="section-title">Upload</div>
-                    <div className="helper-text">drag, drop, done</div>
                   </div>
                   <div
                     className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
@@ -767,7 +746,6 @@ export default function App() {
                     }}
                   >
                     <strong>Drop files or tap to upload</strong>
-                    <span>PDF, DOCX, TXT, and Markdown all work here.</span>
                     <input
                       ref={fileInputRef}
                       hidden
@@ -974,7 +952,7 @@ export default function App() {
         </aside>
 
         <main className="panel chat-panel glass-panel">
-            <div className="chat-header">
+          <div className="chat-header">
             <div className="chat-toolbar mobile-only">
               <SidebarToggle
                 side="left"
@@ -998,37 +976,7 @@ export default function App() {
               />
             </div>
             <div className="chat-header-row">
-              <div className="chat-heading">
-                <div className="section-kicker">Tutor Mode</div>
-                <div className="chat-title-row">
-                  <div>
-                    <div className="chat-title">Ask against your chosen stack</div>
-                    <div className="header-subtitle">
-                      Fast answers, summaries, and explanations grounded in the docs you have
-                      checked in.
-                    </div>
-                  </div>
-                  <div className="chat-status-pill">
-                    {selectedFiles.size} source{selectedFiles.size === 1 ? "" : "s"} live
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="selected-stack">
-              {selectedDocumentNames.length ? (
-                selectedDocumentNames.slice(0, 4).map((name) => (
-                  <span key={name} className="source-chip">
-                    {name}
-                  </span>
-                ))
-              ) : (
-                <span className="source-chip muted">No sources selected</span>
-              )}
-              {selectedDocumentNames.length > 4 ? (
-                <span className="source-chip muted">
-                  +{selectedDocumentNames.length - 4} more
-                </span>
-              ) : null}
+              <div className="panel-title" style={{ margin: 0 }}>Chat</div>
             </div>
             {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
           </div>
@@ -1038,25 +986,7 @@ export default function App() {
               <section className="chat-hero">
                 <div className="chat-hero-copy">
                   <div className="chat-hero-badge">Hot desk</div>
-                  <h2>Ask for the version of this material you actually need.</h2>
-                  <p>
-                    Summaries, explainers, quick quizzes, cram sheets, or challenge questions.
-                    The answer stays grounded in the files you have checked in.
-                  </p>
-                </div>
-                <div className="hero-metrics compact">
-                  <div className="metric-card">
-                    <span className="metric-value">{documents.length}</span>
-                    <span className="metric-label">docs</span>
-                  </div>
-                  <div className="metric-card">
-                    <span className="metric-value">{tags.length}</span>
-                    <span className="metric-label">topics</span>
-                  </div>
-                  <div className="metric-card">
-                    <span className="metric-value">{notes.length}</span>
-                    <span className="metric-label">notes</span>
-                  </div>
+                  <h2>Ask a question</h2>
                 </div>
                 <div className="starter-grid">
                   {starterQuestions.map((question) => (
@@ -1136,21 +1066,12 @@ export default function App() {
         </main>
 
         <aside
-          className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"} ${
-            isMobile ? "mobile" : ""
-          }`}
+          className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"} ${isMobile ? "mobile" : ""
+            }`}
         >
           <div className="panel glass-panel">
-            <div className="panel-header">
-              <div className="panel-heading">
-                <div className="section-kicker">Studio</div>
-                <div>
-                  <div className="panel-title">Practice Lab</div>
-                  <div className="header-subtitle">
-                    Turn one source into drills, recall loops, and quick revision tools.
-                  </div>
-                </div>
-              </div>
+            <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: rightSidebarOpen ? 'space-between' : 'center' }}>
+              {rightSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Studio</div>}
               <SidebarToggle
                 side="right"
                 open={rightSidebarOpen}
@@ -1173,13 +1094,6 @@ export default function App() {
 
             <div className="panel-body right-body">
               <div className="studio-stack">
-                <section className="hero-card studio-hero">
-                  <div className="hero-badge">Practice loop</div>
-                  <h2>Pick one source, then spin it into active recall.</h2>
-                  <p>
-                    Use flashcards for memory work and quiz mode when you want immediate feedback.
-                  </p>
-                </section>
 
                 <section className="section">
                   <div className="section-title">Source document</div>
@@ -1195,9 +1109,6 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  <div className="helper-text">
-                    {selectedDocument || "Choose a source to unlock the studio tools."}
-                  </div>
                 </section>
 
                 <section className="section">
@@ -1206,7 +1117,6 @@ export default function App() {
                     <div className="studio-card-icon">🎧</div>
                     <div>
                       <div className="studio-card-title">Audio recap</div>
-                      <div className="helper-text">Reserved for a future drop.</div>
                     </div>
                   </button>
                   <button
@@ -1218,7 +1128,6 @@ export default function App() {
                     <div className="studio-card-icon">📝</div>
                     <div>
                       <div className="studio-card-title">Quiz me</div>
-                      <div className="helper-text">Generate multiple choice pressure checks.</div>
                     </div>
                   </button>
                   <button
@@ -1230,7 +1139,6 @@ export default function App() {
                     <div className="studio-card-icon">🗂</div>
                     <div>
                       <div className="studio-card-title">Flashcards</div>
-                      <div className="helper-text">Practice terms, prompts, and definitions.</div>
                     </div>
                   </button>
                 </section>
