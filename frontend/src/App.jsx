@@ -16,15 +16,22 @@ import {
 } from "./api";
 
 const COMPLETED_UPLOAD_VISIBLE_MS = 4000;
+const MOBILE_BREAKPOINT = 900;
 
 const initialMessages = [
   {
     id: crypto.randomUUID(),
     type: "bot",
     content:
-      "Hello! I'm here to help you with your studies. Upload documents on the left and ask me anything about them.",
+      "Your study stack is live. Drop in source material, pick the docs you want active, and I’ll help you turn them into answers, drills, and revision prompts.",
     sources: []
   }
+];
+
+const starterQuestions = [
+  "Give me the fastest revision rundown from the checked docs.",
+  "Turn this material into a last-minute exam prep checklist.",
+  "Explain the difficult bits like a smart tutor, not a textbook."
 ];
 
 function normalizeDocument(doc) {
@@ -51,11 +58,15 @@ function autoResize(textarea) {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
 }
 
-const starterQuestions = [
-  "Summarize the most important ideas in my selected documents.",
-  "Generate a study checklist from the uploaded material.",
-  "Explain the key concepts like I am revising for an exam."
-];
+function getViewportState() {
+  if (typeof window === "undefined") {
+    return { isMobile: false };
+  }
+
+  return {
+    isMobile: window.innerWidth <= MOBILE_BREAKPOINT
+  };
+}
 
 function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
   const cards = state.data?.cards || [];
@@ -69,10 +80,10 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
             <div className="chat-title">{state.data?.title || "Flashcards"}</div>
             <div className="header-subtitle">
               {state.loading
-                ? "Generating flashcards from the selected document."
+                ? "Cooking up a fresh flashcard deck from the selected source."
                 : state.error
                   ? "Flashcard generation failed."
-                  : "Flip the card to switch between prompt and answer."}
+                  : "Tap the card to flip between prompt and answer."}
             </div>
           </div>
           <button className="modal-close" type="button" onClick={onClose}>
@@ -81,9 +92,7 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
         </div>
         <div className="modal-body">
           {state.loading ? (
-            <div className="empty-state">
-              Analyzing document and generating flashcards...
-            </div>
+            <div className="empty-state">Building the deck...</div>
           ) : state.error ? (
             <div className="empty-state error-text">{state.error}</div>
           ) : currentCard ? (
@@ -91,7 +100,7 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
               <div className="flashcard" onClick={onFlip}>
                 <div>
                   <div className="flashcard-label">
-                    {state.side === "front" ? "Term" : "Definition"}
+                    {state.side === "front" ? "Prompt" : "Answer"}
                   </div>
                   <div className="flashcard-text">
                     {state.side === "front" ? currentCard.front : currentCard.back}
@@ -105,7 +114,7 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
                   onClick={onPrev}
                   disabled={state.index === 0}
                 >
-                  Prev
+                  Back
                 </button>
                 <div className="flashcard-meta">
                   {state.index + 1} / {cards.length}
@@ -143,10 +152,10 @@ function QuizModal({ state, onClose, onAnswer }) {
             <div className="chat-title">{state.data?.title || "Quiz"}</div>
             <div className="header-subtitle">
               {state.loading
-                ? "Generating questions from the selected document."
+                ? "Building a question set from the selected source."
                 : state.error
                   ? "Quiz generation failed."
-                  : "Pick one answer per question to reveal feedback."}
+                  : "Lock in an answer to reveal the explanation."}
             </div>
           </div>
           <button className="modal-close" type="button" onClick={onClose}>
@@ -155,9 +164,7 @@ function QuizModal({ state, onClose, onAnswer }) {
         </div>
         <div className="modal-body">
           {state.loading ? (
-            <div className="empty-state">
-              Analyzing document and generating quiz questions...
-            </div>
+            <div className="empty-state">Generating quiz questions...</div>
           ) : state.error ? (
             <div className="empty-state error-text">{state.error}</div>
           ) : questions.length ? (
@@ -204,10 +211,10 @@ function QuizModal({ state, onClose, onAnswer }) {
                     <div className="quiz-explanation">
                       <div className="quiz-feedback">
                         {selected === question.correct_answer
-                          ? "Correct."
-                          : `Selected: ${selected}`}
+                          ? "Locked in. Correct."
+                          : `You picked: ${selected}`}
                       </div>
-                      <strong>Explanation:</strong> {question.explanation}
+                      <strong>Why:</strong> {question.explanation}
                     </div>
                   ) : null}
                 </section>
@@ -219,6 +226,24 @@ function QuizModal({ state, onClose, onAnswer }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function SidebarToggle({ side, open, onClick, mobile = false, label }) {
+  const buttonLabel = label || `${open ? "Hide" : "Open"} ${side} sidebar`;
+
+  return (
+    <button
+      className={`sidebar-toggle ${mobile ? "mobile" : ""}`}
+      type="button"
+      onClick={onClick}
+      aria-label={buttonLabel}
+    >
+      <span className="sidebar-toggle-icon">
+        {side === "left" ? (open ? "←" : "→") : open ? "→" : "←"}
+      </span>
+      <span className="sidebar-toggle-label">{label || (open ? "Hide" : "Open")}</span>
+    </button>
   );
 }
 
@@ -254,10 +279,14 @@ export default function App() {
   const [tagDraft, setTagDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
   const [errorBanner, setErrorBanner] = useState("");
+  const [viewport, setViewport] = useState(getViewportState);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(() => !getViewportState().isMobile);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(() => !getViewportState().isMobile);
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
   const seenCompletedJobsRef = useRef(new Set());
+  const wasMobileRef = useRef(getViewportState().isMobile);
 
   function showError(message) {
     setErrorBanner(message);
@@ -279,6 +308,27 @@ export default function App() {
 
     return () => window.clearTimeout(timerId);
   }, [errorBanner]);
+
+  useEffect(() => {
+    function handleResize() {
+      const nextViewport = getViewportState();
+      setViewport(nextViewport);
+
+      if (nextViewport.isMobile !== wasMobileRef.current) {
+        if (nextViewport.isMobile) {
+          setLeftSidebarOpen(false);
+          setRightSidebarOpen(false);
+        } else {
+          setLeftSidebarOpen(true);
+          setRightSidebarOpen(true);
+        }
+        wasMobileRef.current = nextViewport.isMobile;
+      }
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     void loadTagsAndNotes();
@@ -583,252 +633,442 @@ export default function App() {
     return Date.now() - completedAt < COMPLETED_UPLOAD_VISIBLE_MS;
   });
 
+  const selectedDocumentNames = documents
+    .filter((doc) => selectedFiles.has(doc.filename))
+    .map((doc) => doc.filename);
   const hasStudioSelection = Boolean(selectedDocument);
+  const isMobile = viewport.isMobile;
+  const frameStyle = isMobile
+    ? undefined
+    : {
+        gridTemplateColumns: [
+          leftSidebarOpen ? "minmax(280px, 320px)" : "86px",
+          "minmax(0, 1fr)",
+          rightSidebarOpen ? "minmax(280px, 320px)" : "86px"
+        ].join(" ")
+      };
 
   return (
     <div className="app-shell">
-      <div className="app-frame">
-        <aside className="panel sidebar">
-          <div className="panel-header">
-            <div className="brand">
-              <div className="brand-mark">SH</div>
-              <div className="brand-copy">
-                <h1>Study Hub</h1>
-                <p>React frontend with a Vite build served by FastAPI.</p>
-              </div>
-            </div>
-            <button
-              className="theme-toggle"
-              type="button"
-              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              title="Toggle theme"
-            >
-              {theme === "dark" ? "☀" : "☾"}
-            </button>
+      <div className="app-noise" />
+      <div className="orb orb-one" />
+      <div className="orb orb-two" />
+      <div className="orb orb-three" />
+
+      {isMobile && (leftSidebarOpen || rightSidebarOpen) ? (
+        <button
+          className="drawer-overlay"
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => {
+            setLeftSidebarOpen(false);
+            setRightSidebarOpen(false);
+          }}
+        />
+      ) : null}
+
+      <div className="app-topbar">
+        <div className="topbar-brand">
+          <div className="brand-mark">SS</div>
+          <div className="topbar-copy">
+            <span className="eyebrow">Study Space</span>
+            <h1>Turn course chaos into something you can actually revise.</h1>
           </div>
-          <div className="panel-body">
-            <div className="sidebar-stack">
-              <section className="section">
-                <div className="section-head">
-                  <div className="section-title">Documents</div>
-                  <div className="helper-text">{documents.length} indexed</div>
+        </div>
+        <div className="topbar-actions">
+          <div className="status-chip pulse">
+            {documents.length} doc{documents.length === 1 ? "" : "s"} loaded
+          </div>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+            title="Toggle theme"
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
+        </div>
+      </div>
+
+      <div className="app-frame" style={frameStyle}>
+        <aside
+          className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"} ${
+            isMobile ? "mobile" : ""
+          }`}
+        >
+          <div className="panel glass-panel">
+            <div className="panel-header">
+              <div className="panel-heading">
+                <div className="section-kicker">Workspace</div>
+                <div>
+                  <div className="panel-title">Source Stack</div>
+                  <div className="header-subtitle">
+                    Upload lecture notes, readings, and handouts in one place.
+                  </div>
                 </div>
-                <div
-                  className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setIsDragOver(true);
-                  }}
-                  onDragLeave={() => setIsDragOver(false)}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setIsDragOver(false);
-                    void handleUpload(event.dataTransfer.files);
-                  }}
-                >
-                  <strong>Drop files here or click to upload</strong>
-                  <span>PDF, DOCX, TXT, and Markdown are supported.</span>
-                  <input
-                    ref={fileInputRef}
-                    hidden
-                    type="file"
-                    accept=".pdf,.docx,.txt,.md"
-                    multiple
-                    onChange={async (event) => {
-                      await handleUpload(event.currentTarget.files);
-                      event.currentTarget.value = "";
+              </div>
+              <SidebarToggle
+                side="left"
+                open={leftSidebarOpen}
+                mobile={isMobile}
+                onClick={() => setLeftSidebarOpen((prev) => !prev)}
+              />
+            </div>
+
+            <div className="side-rail">
+              <button
+                className="rail-badge"
+                type="button"
+                onClick={() => setLeftSidebarOpen((prev) => !prev)}
+              >
+                📚
+              </button>
+              <div className="rail-count">{documents.length}</div>
+              <div className="rail-mini-label">Docs</div>
+            </div>
+
+            <div className="panel-body left-body">
+              <div className="sidebar-stack">
+                <section className="hero-card accent-card">
+                  <div className="hero-card-top">
+                    <div className="hero-badge">Ready to build</div>
+                    <div className="helper-text">
+                      {selectedFiles.size} active source{selectedFiles.size === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <h2>Keep the exact material you want in the room.</h2>
+                  <p>
+                    Check the documents that should shape the chat. Everything else stays out
+                    of the answer stream.
+                  </p>
+                </section>
+
+                <section className="section">
+                  <div className="section-head">
+                    <div className="section-title">Upload</div>
+                    <div className="helper-text">drag, drop, done</div>
+                  </div>
+                  <div
+                    className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setIsDragOver(true);
                     }}
-                  />
-                </div>
-                <div className="stack">
-                  {visibleUploadJobs.length ? (
-                    visibleUploadJobs.map((job) => (
-                      <div key={job.job_id} className={`upload-job status-${job.status}`}>
-                        <div className="upload-job-head">
-                          <div className="upload-job-file" title={job.filename}>
-                            {job.filename}
-                          </div>
-                          <div className="upload-job-status">{job.status}</div>
-                        </div>
-                        <div className="meta-text">{job.stage}</div>
-                        <div className="progress-track">
-                          <div
-                            className="progress-bar"
-                            style={{
-                              width: `${Math.max(0, Math.min(100, job.progress || 0))}%`
-                            }}
-                          />
-                        </div>
-                        <div className="upload-job-meta">
-                          {[
-                            job.queue_position ? `Queue #${job.queue_position}` : null,
-                            job.predicted_tag ? `Tag: ${job.predicted_tag}` : null,
-                            typeof job.processing_time_seconds === "number"
-                              ? `${job.processing_time_seconds.toFixed(2)}s`
-                              : null,
-                            job.error ? `Error: ${job.error}` : null
-                          ]
-                            .filter(Boolean)
-                            .join(" • ")}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty-state">No active uploads.</div>
-                  )}
-                </div>
-                <div className="stack">
-                  {documents.length ? (
-                    documents.map((doc) => (
-                      <div key={doc.filename} className="document-item">
-                        <label className="document-select">
-                          <input
-                            type="checkbox"
-                            checked={selectedFiles.has(doc.filename)}
-                            onChange={() =>
-                              setSelectedFiles((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(doc.filename)) {
-                                  next.delete(doc.filename);
-                                } else {
-                                  next.add(doc.filename);
-                                }
-                                return next;
-                              })
-                            }
-                          />
-                          <div className="document-meta">
-                            <div className="document-name" title={doc.filename}>
-                              {doc.filename}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      setIsDragOver(false);
+                      void handleUpload(event.dataTransfer.files);
+                    }}
+                  >
+                    <strong>Drop files or tap to upload</strong>
+                    <span>PDF, DOCX, TXT, and Markdown all work here.</span>
+                    <input
+                      ref={fileInputRef}
+                      hidden
+                      type="file"
+                      accept=".pdf,.docx,.txt,.md"
+                      multiple
+                      onChange={async (event) => {
+                        await handleUpload(event.currentTarget.files);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="section-head">
+                    <div className="section-title">Pipeline</div>
+                    <div className="helper-text">{visibleUploadJobs.length} live</div>
+                  </div>
+                  <div className="stack">
+                    {visibleUploadJobs.length ? (
+                      visibleUploadJobs.map((job) => (
+                        <div key={job.job_id} className={`upload-job status-${job.status}`}>
+                          <div className="upload-job-head">
+                            <div className="upload-job-file" title={job.filename}>
+                              {job.filename}
                             </div>
-                            {doc.tag ? <span className="pill">{doc.tag}</span> : null}
+                            <div className="upload-job-status">{job.status}</div>
                           </div>
-                        </label>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          title="Delete"
-                          onClick={() => void handleDeleteDocument(doc.filename)}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty-state">No documents uploaded yet.</div>
-                  )}
-                </div>
-              </section>
+                          <div className="meta-text">{job.stage}</div>
+                          <div className="progress-track">
+                            <div
+                              className="progress-bar"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, job.progress || 0))}%`
+                              }}
+                            />
+                          </div>
+                          <div className="upload-job-meta">
+                            {[
+                              job.queue_position ? `Queue #${job.queue_position}` : null,
+                              job.predicted_tag ? `Tag: ${job.predicted_tag}` : null,
+                              typeof job.processing_time_seconds === "number"
+                                ? `${job.processing_time_seconds.toFixed(2)}s`
+                                : null,
+                              job.error ? `Error: ${job.error}` : null
+                            ]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-card">Nothing processing right now.</div>
+                    )}
+                  </div>
+                </section>
 
-              <section className="section">
-                <div className="section-head">
-                  <div className="section-title">Topics</div>
-                </div>
-                <div className="tags-wrap">
-                  {tags.length ? (
-                    tags.map((tag) => (
-                      <div key={tag} className="tag-chip">
-                        <span>{tag}</span>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${tag}`}
-                          onClick={() => void handleDeleteTag(tag)}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty-state">No topics yet.</div>
-                  )}
-                </div>
-                <div className="input-row">
-                  <input
-                    className="input"
-                    value={tagDraft}
-                    placeholder="New topic..."
-                    onChange={(event) => setTagDraft(event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void handleAddTag();
-                      }
-                    }}
-                  />
-                  <button className="small-button primary" type="button" onClick={() => void handleAddTag()}>
-                    Add
-                  </button>
-                </div>
-              </section>
-
-              <section className="section">
-                <div className="section-head">
-                  <div className="section-title">Notes</div>
-                </div>
-                <div className="notes-list">
-                  {notes.length ? (
-                    notes.map((note) => (
-                      <div key={note.id} className="note-card">
-                        <div className="note-content">{note.content}</div>
-                        <div className="note-footer">
-                          <div className="note-date">{formatDate(note.created_at)}</div>
+                <section className="section">
+                  <div className="section-head">
+                    <div className="section-title">Documents</div>
+                    <div className="helper-text">{documents.length} indexed</div>
+                  </div>
+                  <div className="stack">
+                    {documents.length ? (
+                      documents.map((doc) => (
+                        <div key={doc.filename} className="document-item">
+                          <label className="document-select">
+                            <input
+                              type="checkbox"
+                              checked={selectedFiles.has(doc.filename)}
+                              onChange={() =>
+                                setSelectedFiles((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(doc.filename)) {
+                                    next.delete(doc.filename);
+                                  } else {
+                                    next.add(doc.filename);
+                                  }
+                                  return next;
+                                })
+                              }
+                            />
+                            <div className="document-meta">
+                              <div className="document-name" title={doc.filename}>
+                                {doc.filename}
+                              </div>
+                              <div className="document-line">
+                                {doc.tag ? <span className="pill">{doc.tag}</span> : null}
+                                {selectedFiles.has(doc.filename) ? (
+                                  <span className="micro-pill active">Live</span>
+                                ) : (
+                                  <span className="micro-pill">Muted</span>
+                                )}
+                              </div>
+                            </div>
+                          </label>
                           <button
-                            className="note-delete"
+                            className="icon-button"
                             type="button"
-                            onClick={() => void handleDeleteNote(note.id)}
+                            title="Delete"
+                            onClick={() => void handleDeleteDocument(doc.filename)}
                           >
-                            Delete
+                            ×
                           </button>
                         </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="empty-state">No notes yet.</div>
-                  )}
-                </div>
-                <div className="stack">
-                  <textarea
-                    className="textarea"
-                    placeholder="Take a note..."
-                    value={noteDraft}
-                    onChange={(event) => setNoteDraft(event.currentTarget.value)}
-                  />
-                  <button className="small-button primary" type="button" onClick={() => void handleAddNote()}>
-                    Save note
-                  </button>
-                </div>
-              </section>
+                      ))
+                    ) : (
+                      <div className="empty-card">No documents yet. Start by dropping a file.</div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="section-head">
+                    <div className="section-title">Topics</div>
+                  </div>
+                  <div className="tags-wrap">
+                    {tags.length ? (
+                      tags.map((tag) => (
+                        <div key={tag} className="tag-chip">
+                          <span>{tag}</span>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${tag}`}
+                            onClick={() => void handleDeleteTag(tag)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-card compact">No topics yet.</div>
+                    )}
+                  </div>
+                  <div className="input-row">
+                    <input
+                      className="input"
+                      value={tagDraft}
+                      placeholder="Add a topic lens..."
+                      onChange={(event) => setTagDraft(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleAddTag();
+                        }
+                      }}
+                    />
+                    <button
+                      className="small-button primary"
+                      type="button"
+                      onClick={() => void handleAddTag()}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </section>
+
+                <section className="section">
+                  <div className="section-head">
+                    <div className="section-title">Notes</div>
+                    <div className="helper-text">{notes.length} saved</div>
+                  </div>
+                  <div className="notes-list">
+                    {notes.length ? (
+                      notes.map((note) => (
+                        <div key={note.id} className="note-card">
+                          <div className="note-content">{note.content}</div>
+                          <div className="note-footer">
+                            <div className="note-date">{formatDate(note.created_at)}</div>
+                            <button
+                              className="note-delete"
+                              type="button"
+                              onClick={() => void handleDeleteNote(note.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-card">No notes yet. Capture the good bits here.</div>
+                    )}
+                  </div>
+                  <div className="stack">
+                    <textarea
+                      className="textarea"
+                      placeholder="Drop a quick takeaway, quote, or reminder..."
+                      value={noteDraft}
+                      onChange={(event) => setNoteDraft(event.currentTarget.value)}
+                    />
+                    <button
+                      className="small-button primary"
+                      type="button"
+                      onClick={() => void handleAddNote()}
+                    >
+                      Save note
+                    </button>
+                  </div>
+                </section>
+              </div>
             </div>
           </div>
         </aside>
 
-        <main className="panel chat-panel">
+        <main className="panel chat-panel glass-panel">
           <div className="chat-header">
+            <div className="chat-toolbar mobile-only">
+              <SidebarToggle
+                side="left"
+                open={leftSidebarOpen}
+                mobile
+                label="Sources"
+                onClick={() => {
+                  setLeftSidebarOpen((prev) => !prev);
+                  setRightSidebarOpen(false);
+                }}
+              />
+              <SidebarToggle
+                side="right"
+                open={rightSidebarOpen}
+                mobile
+                label="Studio"
+                onClick={() => {
+                  setRightSidebarOpen((prev) => !prev);
+                  setLeftSidebarOpen(false);
+                }}
+              />
+            </div>
             <div className="chat-header-row">
-              <div>
-                <div className="chat-title">AI Assistant</div>
-                <div className="header-subtitle">
-                  Ask questions against the currently selected document set.
+              <div className="chat-heading">
+                <div className="section-kicker">Tutor Mode</div>
+                <div className="chat-title-row">
+                  <div>
+                    <div className="chat-title">Ask against your chosen stack</div>
+                    <div className="header-subtitle">
+                      Fast answers, summaries, and explanations grounded in the docs you have
+                      checked in.
+                    </div>
+                  </div>
+                  <div className="chat-status-pill">
+                    {selectedFiles.size} source{selectedFiles.size === 1 ? "" : "s"} live
+                  </div>
                 </div>
               </div>
-              <div className="chat-status-pill">
-                {selectedFiles.size} source{selectedFiles.size === 1 ? "" : "s"} active
+              <div className="desktop-sidebar-actions">
+                <SidebarToggle
+                  side="left"
+                  open={leftSidebarOpen}
+                  onClick={() => setLeftSidebarOpen((prev) => !prev)}
+                />
+                <SidebarToggle
+                  side="right"
+                  open={rightSidebarOpen}
+                  onClick={() => setRightSidebarOpen((prev) => !prev)}
+                />
               </div>
             </div>
-            {errorBanner ? (
-              <div className="helper-text error-text top-gap">{errorBanner}</div>
-            ) : null}
+            <div className="selected-stack">
+              {selectedDocumentNames.length ? (
+                selectedDocumentNames.slice(0, 4).map((name) => (
+                  <span key={name} className="source-chip">
+                    {name}
+                  </span>
+                ))
+              ) : (
+                <span className="source-chip muted">No sources selected</span>
+              )}
+              {selectedDocumentNames.length > 4 ? (
+                <span className="source-chip muted">
+                  +{selectedDocumentNames.length - 4} more
+                </span>
+              ) : null}
+            </div>
+            {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
           </div>
+
           <div className="chat-body" ref={chatBodyRef}>
             {chatMessages.length === 1 ? (
               <section className="chat-hero">
-                <div className="chat-hero-badge">Study Session</div>
-                <h2>Turn your documents into something you can actually revise.</h2>
-                <p>
-                  Ask for summaries, exam-style explanations, flashcards, or focused answers
-                  against just the files you have checked in the left panel.
-                </p>
+                <div className="chat-hero-grid">
+                  <div className="chat-hero-copy">
+                    <div className="chat-hero-badge">Hot desk</div>
+                    <h2>Make your notes hit harder than the original lecture.</h2>
+                    <p>
+                      Ask for concept maps, cram sheets, explainers, comparison tables, or
+                      challenge questions. Keep the thread moving without losing your document
+                      context.
+                    </p>
+                  </div>
+                  <div className="hero-metrics">
+                    <div className="metric-card">
+                      <span className="metric-value">{documents.length}</span>
+                      <span className="metric-label">loaded docs</span>
+                    </div>
+                    <div className="metric-card">
+                      <span className="metric-value">{tags.length}</span>
+                      <span className="metric-label">topics tracked</span>
+                    </div>
+                    <div className="metric-card">
+                      <span className="metric-value">{notes.length}</span>
+                      <span className="metric-label">notes saved</span>
+                    </div>
+                  </div>
+                </div>
                 <div className="starter-grid">
                   {starterQuestions.map((question) => (
                     <button
@@ -843,15 +1083,16 @@ export default function App() {
                 </div>
               </section>
             ) : null}
+
             {chatMessages.map((message) => (
               <article key={message.id} className={`message ${message.type}`}>
                 <div className="message-sender">
-                  {message.type === "user" ? "You" : "AI Assistant"}
+                  {message.type === "user" ? "You" : "Study Space"}
                 </div>
                 <div className="message-body">{message.content}</div>
                 {message.sources?.length ? (
                   <div className="sources">
-                    <div className="source-list-label">Sources</div>
+                    <div className="source-list-label">Pulled from</div>
                     <div className="source-pills">
                       {message.sources.map((source, index) => (
                         <span
@@ -867,98 +1108,144 @@ export default function App() {
               </article>
             ))}
           </div>
+
           <div className="chat-footer">
-            {isSending ? <div className="loading-text">Thinking...</div> : null}
-            <div className="composer">
-              <textarea
-                className="textarea"
-                rows="1"
-                placeholder="Ask a question about your documents..."
-                value={chatInput}
-                onChange={(event) => {
-                  setChatInput(event.currentTarget.value);
-                  autoResize(event.currentTarget);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void handleSendMessage();
-                  }
-                }}
-              />
-              <button
-                className="send-button"
-                type="button"
-                onClick={() => void handleSendMessage()}
-                disabled={isSending}
-              >
-                ➜
-              </button>
+            {isSending ? <div className="loading-text">Thinking through your material...</div> : null}
+            <div className="composer-shell">
+              <div className="composer">
+                <textarea
+                  className="textarea composer-input"
+                  rows="1"
+                  placeholder="Ask for a summary, breakdown, challenge question, or study guide..."
+                  value={chatInput}
+                  onChange={(event) => {
+                    setChatInput(event.currentTarget.value);
+                    autoResize(event.currentTarget);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSendMessage();
+                    }
+                  }}
+                />
+                <button
+                  className="send-button"
+                  type="button"
+                  onClick={() => void handleSendMessage()}
+                  disabled={isSending}
+                >
+                  ➜
+                </button>
+              </div>
+              <div className="composer-meta">
+                <span>Enter to send</span>
+                <span>Shift + Enter for a new line</span>
+              </div>
             </div>
           </div>
         </main>
 
-        <aside className="panel studio">
-          <div className="panel-header">
-            <div>
-              <div className="studio-title">Studio</div>
-              <div className="header-subtitle">
-                Generate quiz and flashcard practice from one source document.
+        <aside
+          className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"} ${
+            isMobile ? "mobile" : ""
+          }`}
+        >
+          <div className="panel glass-panel">
+            <div className="panel-header">
+              <div className="panel-heading">
+                <div className="section-kicker">Studio</div>
+                <div>
+                  <div className="panel-title">Practice Lab</div>
+                  <div className="header-subtitle">
+                    Turn one source into drills, recall loops, and quick revision tools.
+                  </div>
+                </div>
               </div>
+              <SidebarToggle
+                side="right"
+                open={rightSidebarOpen}
+                mobile={isMobile}
+                onClick={() => setRightSidebarOpen((prev) => !prev)}
+              />
             </div>
-          </div>
-          <div className="panel-body">
-            <div className="studio-stack">
-              <section className="section">
-                <div className="section-title">Source Document</div>
-                <select
-                  className="select"
-                  value={selectedDocument}
-                  onChange={(event) => setSelectedDocument(event.currentTarget.value)}
-                >
-                  <option value="">Select a document...</option>
-                  {documents.map((doc) => (
-                    <option key={doc.filename} value={doc.filename}>
-                      {doc.filename}
-                    </option>
-                  ))}
-                </select>
-              </section>
 
-              <section className="section">
-                <div className="section-title">Tools</div>
-                <button className="studio-card audio-card" type="button" disabled>
-                  <div className="studio-card-icon">🎧</div>
-                  <div>
-                    <div className="studio-card-title">Audio Overview</div>
-                    <div className="helper-text">Reserved for a future iteration.</div>
+            <div className="side-rail">
+              <button
+                className="rail-badge neon"
+                type="button"
+                onClick={() => setRightSidebarOpen((prev) => !prev)}
+              >
+                ✦
+              </button>
+              <div className="rail-count">{hasStudioSelection ? 1 : 0}</div>
+              <div className="rail-mini-label">Live</div>
+            </div>
+
+            <div className="panel-body right-body">
+              <div className="studio-stack">
+                <section className="hero-card studio-hero">
+                  <div className="hero-badge">Practice loop</div>
+                  <h2>Pick one source, then spin it into active recall.</h2>
+                  <p>
+                    Use flashcards for memory work and quiz mode when you want immediate feedback.
+                  </p>
+                </section>
+
+                <section className="section">
+                  <div className="section-title">Source document</div>
+                  <select
+                    className="select"
+                    value={selectedDocument}
+                    onChange={(event) => setSelectedDocument(event.currentTarget.value)}
+                  >
+                    <option value="">Select a document...</option>
+                    {documents.map((doc) => (
+                      <option key={doc.filename} value={doc.filename}>
+                        {doc.filename}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="helper-text">
+                    {selectedDocument || "Choose a source to unlock the studio tools."}
                   </div>
-                </button>
-                <button
-                  className="studio-card quiz-card"
-                  type="button"
-                  disabled={!hasStudioSelection}
-                  onClick={() => void handleGenerateQuiz()}
-                >
-                  <div className="studio-card-icon">📝</div>
-                  <div>
-                    <div className="studio-card-title">Quiz</div>
-                    <div className="helper-text">Generate multiple-choice questions.</div>
-                  </div>
-                </button>
-                <button
-                  className="studio-card flashcard-card"
-                  type="button"
-                  disabled={!hasStudioSelection}
-                  onClick={() => void handleGenerateFlashcards()}
-                >
-                  <div className="studio-card-icon">🗂</div>
-                  <div>
-                    <div className="studio-card-title">Flashcards</div>
-                    <div className="helper-text">Practice key terms and definitions.</div>
-                  </div>
-                </button>
-              </section>
+                </section>
+
+                <section className="section">
+                  <div className="section-title">Tools</div>
+                  <button className="studio-card audio-card" type="button" disabled>
+                    <div className="studio-card-icon">🎧</div>
+                    <div>
+                      <div className="studio-card-title">Audio recap</div>
+                      <div className="helper-text">Reserved for a future drop.</div>
+                    </div>
+                  </button>
+                  <button
+                    className="studio-card quiz-card"
+                    type="button"
+                    disabled={!hasStudioSelection}
+                    onClick={() => void handleGenerateQuiz()}
+                  >
+                    <div className="studio-card-icon">📝</div>
+                    <div>
+                      <div className="studio-card-title">Quiz me</div>
+                      <div className="helper-text">Generate multiple choice pressure checks.</div>
+                    </div>
+                  </button>
+                  <button
+                    className="studio-card flashcard-card"
+                    type="button"
+                    disabled={!hasStudioSelection}
+                    onClick={() => void handleGenerateFlashcards()}
+                  >
+                    <div className="studio-card-icon">🗂</div>
+                    <div>
+                      <div className="studio-card-title">Flashcards</div>
+                      <div className="helper-text">Practice terms, prompts, and definitions.</div>
+                    </div>
+                  </button>
+                </section>
+              </div>
             </div>
           </div>
         </aside>
