@@ -31,7 +31,12 @@ class RAGChat:
 
         logger.info("RAG Chat initialized with Gemini 3.1 Flash Lite Preview")
 
-    def chat(self, message: str, selected_files: List[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+    def chat(
+        self,
+        message: str,
+        owner_username: str,
+        selected_files: List[str] = None,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Process a chat message with RAG
 
@@ -44,7 +49,11 @@ class RAGChat:
         """
         try:
             # Get relevant context from vector store
-            context, sources = self.vector_store.get_relevant_context(message, selected_files=selected_files)
+            context, sources = self.vector_store.get_relevant_context(
+                message,
+                owner_username=owner_username,
+                selected_files=selected_files,
+            )
 
             # Create prompt with context
             prompt = self._create_prompt(message, context)

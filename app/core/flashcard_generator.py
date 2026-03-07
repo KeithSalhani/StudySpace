@@ -32,7 +32,12 @@ class FlashcardGenerator:
         
         logger.info("Flashcard Generator initialized with Gemini 3.1 Flash Lite Preview")
 
-    def generate_flashcards(self, filename: str, num_cards: int = 10) -> Dict[str, Any]:
+    def generate_flashcards(
+        self,
+        filename: str,
+        num_cards: int = 10,
+        document_path: Optional[Path] = None,
+    ) -> Dict[str, Any]:
         """
         Generate flashcards from a document
 
@@ -45,7 +50,7 @@ class FlashcardGenerator:
         """
         try:
             # 1. Read the document content
-            md_path = self.processed_dir / f"{filename}.md"
+            md_path = document_path or (self.processed_dir / f"{filename}.md")
             
             if not md_path.exists():
                 raise FileNotFoundError(f"Processed document not found: {md_path}")

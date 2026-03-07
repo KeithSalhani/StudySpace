@@ -9,14 +9,49 @@ async function parseResponse(response) {
       typeof payload === "object" && payload && "detail" in payload
         ? payload.detail
         : "Request failed";
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
   }
 
   return payload;
 }
 
 function request(path, options = {}) {
-  return fetch(path, options).then(parseResponse);
+  return fetch(path, {
+    credentials: "same-origin",
+    ...options
+  }).then(parseResponse);
+}
+
+export function getCurrentUser() {
+  return request("/auth/me");
+}
+
+export function signUp(username, password) {
+  return request("/auth/signup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ username, password })
+  });
+}
+
+export function signIn(username, password) {
+  return request("/auth/signin", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ username, password })
+  });
+}
+
+export function signOut() {
+  return request("/auth/logout", {
+    method: "POST"
+  });
 }
 
 export function getDocuments() {

@@ -1,12 +1,12 @@
 """
 Vector store module using ChromaDB and sentence transformers
 """
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+import threading
+
 import chromadb
 from sentence_transformers import SentenceTransformer
-import logging
-from typing import List, Dict, Any, Tuple
-import uuid
-import threading
 
 from app.config import COLLECTION_NAME, CHROMA_DB_DIR, EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, DEFAULT_SEARCH_RESULTS
 
@@ -120,7 +120,13 @@ class VectorStore:
             logger.error(f"Error adding document {doc_id}: {str(e)}")
             raise
 
-    def search(self, query: str, n_results: int = 5, selected_files: List[str] = None) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        owner_username: str,
+        n_results: int = 5,
+        selected_files: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Search for relevant documents
 
@@ -139,13 +145,19 @@ class VectorStore:
 
             kwargs = {
                 "query_embeddings": [query_embedding.tolist()],
-                "n_results": n_results
+                "n_results": n_results,
             }
+            filters: List[Dict[str, Any]] = [{"owner_username": owner_username}]
             if selected_files:
                 if len(selected_files) == 1:
-                    kwargs["where"] = {"filename": selected_files[0]}
+                    filters.append({"filename": selected_files[0]})
                 else:
-                    kwargs["where"] = {"filename": {"$in": selected_files}}
+                    filters.append({"filename": {"$in": selected_files}})
+
+            if len(filters) == 1:
+                kwargs["where"] = filters[0]
+            else:
+                kwargs["where"] = {"$and": filters}
 
             with self._lock:
                 # Search in collection
@@ -168,7 +180,7 @@ class VectorStore:
             logger.error(f"Error searching: {str(e)}")
             raise
 
-    def delete_document(self, filename: str):
+    def delete_document(self, owner_username: str, filename: str):
         """
         Delete a document from the vector store by filename
 
@@ -180,7 +192,8 @@ class VectorStore:
                 # Find doc_id(s) associated with the filename
                 doc_ids_to_remove = []
                 for doc_id, doc_data in self.documents.items():
-                    if doc_data['metadata'].get('filename') == filename:
+                    metadata = doc_data.get("metadata", {})
+                    if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
                         doc_ids_to_remove.append(doc_id)
 
                 if not doc_ids_to_remove:
@@ -200,7 +213,13 @@ class VectorStore:
             logger.error(f"Error deleting document {filename}: {str(e)}")
             raise
 
-    def get_relevant_context(self, query: str, n_results: int = DEFAULT_SEARCH_RESULTS, selected_files: List[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+    def get_relevant_context(
+        self,
+        query: str,
+        owner_username: str,
+        n_results: int = DEFAULT_SEARCH_RESULTS,
+        selected_files: Optional[List[str]] = None,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Get relevant context for RAG
 
@@ -212,7 +231,12 @@ class VectorStore:
         Returns:
             Tuple of (context_string, sources_list)
         """
-        results = self.search(query, n_results, selected_files=selected_files)
+        results = self.search(
+            query,
+            owner_username=owner_username,
+            n_results=n_results,
+            selected_files=selected_files,
+        )
 
         # Combine documents into context
         context_parts = []
@@ -230,14 +254,14 @@ class VectorStore:
         context = "\n\n".join(context_parts)
         return context, sources
 
-    def list_documents(self) -> List[Dict[str, str]]:
+    def list_documents(self, owner_username: str) -> List[Dict[str, str]]:
         """List unique documents and their tags."""
         with self._lock:
             unique_docs = {}
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
                 filename = metadata.get("filename")
-                if not filename:
+                if metadata.get("owner_username") != owner_username or not filename:
                     continue
                 if filename not in unique_docs:
                     unique_docs[filename] = {
@@ -246,20 +270,28 @@ class VectorStore:
                     }
             return list(unique_docs.values())
 
-    def get_document_paths(self, filename: str) -> List[str]:
+    def get_document_paths(self, owner_username: str, filename: str) -> List[str]:
         """Return all stored file paths linked to a logical filename."""
         with self._lock:
             seen_paths = set()
             paths: List[str] = []
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
-                if metadata.get("filename") != filename:
+                if metadata.get("owner_username") != owner_username or metadata.get("filename") != filename:
                     continue
                 path = metadata.get("path")
                 if path and path not in seen_paths:
                     seen_paths.add(path)
                     paths.append(path)
             return paths
+
+    def get_document_metadata(self, owner_username: str, filename: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            for doc_data in self.documents.values():
+                metadata = doc_data.get("metadata", {})
+                if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
+                    return dict(metadata)
+        return None
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """

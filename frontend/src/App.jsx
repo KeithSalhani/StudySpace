@@ -5,10 +5,14 @@ import {
   deleteDocument,
   generateFlashcards,
   generateQuiz,
+  getCurrentUser,
   getDocuments,
   getNotes,
   getTags,
   getUploadJobs,
+  signIn,
+  signOut,
+  signUp,
   removeNote,
   removeTag,
   sendChatMessage,
@@ -65,6 +69,76 @@ function getViewportState() {
   return {
     isMobile: window.innerWidth <= MOBILE_BREAKPOINT
   };
+}
+
+function isUnauthorizedError(error) {
+  return error?.status === 401;
+}
+
+function AuthScreen({
+  mode,
+  form,
+  busy,
+  error,
+  onChange,
+  onSubmit,
+  onToggleMode
+}) {
+  const isSignUp = mode === "signup";
+
+  return (
+    <div className="auth-shell">
+      <div className="app-noise" />
+      <div className="orb orb-one" />
+      <div className="orb orb-two" />
+      <div className="orb orb-three" />
+      <section className="auth-panel glass-panel">
+        <div className="auth-kicker">Private workspace</div>
+        <h1>{isSignUp ? "Create your study space" : "Sign in to Study Space"}</h1>
+        <p className="auth-copy">
+          Notes, documents, quizzes, flashcards, and chat context stay scoped to your account.
+        </p>
+        <form
+          className="auth-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <label className="auth-field">
+            <span>Username</span>
+            <input
+              className="input"
+              autoComplete="username"
+              value={form.username}
+              onChange={(event) => onChange("username", event.currentTarget.value)}
+              placeholder="your-name"
+            />
+          </label>
+          <label className="auth-field">
+            <span>Password</span>
+            <input
+              className="input"
+              type="password"
+              autoComplete={isSignUp ? "new-password" : "current-password"}
+              value={form.password}
+              onChange={(event) => onChange("password", event.currentTarget.value)}
+              placeholder="At least 8 characters"
+            />
+          </label>
+          {error ? <div className="banner error-text">{error}</div> : null}
+          <div className="auth-actions">
+            <button className="small-button primary auth-submit" type="submit" disabled={busy}>
+              {busy ? "Working..." : isSignUp ? "Create account" : "Sign in"}
+            </button>
+            <button className="small-button" type="button" onClick={onToggleMode} disabled={busy}>
+              {isSignUp ? "Have an account?" : "Need an account?"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
@@ -250,6 +324,12 @@ export default function App() {
   const [theme, setTheme] = useState(
     localStorage.getItem("theme") === "dark" ? "dark" : "light"
   );
+  const [authStatus, setAuthStatus] = useState("loading");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authMode, setAuthMode] = useState("signin");
+  const [authForm, setAuthForm] = useState({ username: "", password: "" });
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [tags, setTags] = useState([]);
@@ -291,6 +371,44 @@ export default function App() {
     setErrorBanner(message);
   }
 
+  function resetWorkspaceState() {
+    setDocuments([]);
+    setSelectedFiles(new Set());
+    setTags([]);
+    setNotes([]);
+    setChatMessages(initialMessages);
+    setChatInput("");
+    setIsSending(false);
+    setUploadJobs([]);
+    setSelectedDocument("");
+    setTagDraft("");
+    setNoteDraft("");
+    setErrorBanner("");
+    setFlashcardState({
+      open: false,
+      loading: false,
+      error: "",
+      data: null,
+      side: "front",
+      index: 0
+    });
+    setQuizState({
+      open: false,
+      loading: false,
+      error: "",
+      data: null,
+      answers: {}
+    });
+    seenCompletedJobsRef.current = new Set();
+  }
+
+  function handleUnauthorized() {
+    resetWorkspaceState();
+    setCurrentUser(null);
+    setAuthError("Your session has ended. Sign in again.");
+    setAuthStatus("anonymous");
+  }
+
   useEffect(() => {
     document.body.classList.toggle("dark-mode", theme === "dark");
     localStorage.setItem("theme", theme);
@@ -330,6 +448,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    async function bootstrapSession() {
+      try {
+        const payload = await getCurrentUser();
+        if (!active) {
+          return;
+        }
+        if (payload.user) {
+          setCurrentUser(payload.user);
+          setAuthStatus("authenticated");
+          setAuthError("");
+        } else {
+          resetWorkspaceState();
+          setCurrentUser(null);
+          setAuthStatus("anonymous");
+        }
+      } catch (_error) {
+        if (!active) {
+          return;
+        }
+        resetWorkspaceState();
+        setCurrentUser(null);
+        setAuthError("");
+        setAuthStatus("anonymous");
+      }
+    }
+
+    void bootstrapSession();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") {
+      return undefined;
+    }
+
     void loadTagsAndNotes();
     void loadDocumentsList();
     void loadUploadJobsList();
@@ -339,7 +497,7 @@ export default function App() {
     }, 2000);
 
     return () => window.clearInterval(timerId);
-  }, []);
+  }, [authStatus]);
 
   useEffect(() => {
     if (!selectedDocument) {
@@ -375,6 +533,10 @@ export default function App() {
           : []
       );
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -401,6 +563,10 @@ export default function App() {
         return next;
       });
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -423,6 +589,10 @@ export default function App() {
         await loadDocumentsList();
       }
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       console.error("Upload polling failed:", error);
     }
   }
@@ -439,6 +609,10 @@ export default function App() {
       try {
         await uploadDocument(file);
       } catch (error) {
+        if (isUnauthorizedError(error)) {
+          handleUnauthorized();
+          return;
+        }
         showError(`Upload failed for ${file.name}: ${error.message}`);
       }
     }
@@ -457,6 +631,10 @@ export default function App() {
       setTags((prev) => [...prev, value]);
       setTagDraft("");
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -466,6 +644,10 @@ export default function App() {
       await removeTag(tag);
       setTags((prev) => prev.filter((item) => item !== tag));
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -481,6 +663,10 @@ export default function App() {
       setNotes((prev) => [payload.note, ...prev]);
       setNoteDraft("");
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -490,6 +676,10 @@ export default function App() {
       await removeNote(noteId);
       setNotes((prev) => prev.filter((note) => note.id !== noteId));
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -503,6 +693,10 @@ export default function App() {
       await deleteDocument(filename);
       await loadDocumentsList();
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       showError(error.message);
     }
   }
@@ -540,6 +734,10 @@ export default function App() {
         }
       ]);
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       setChatMessages((prev) => [
         ...prev,
         {
@@ -579,6 +777,10 @@ export default function App() {
         index: 0
       });
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       setFlashcardState({
         open: true,
         loading: false,
@@ -613,6 +815,10 @@ export default function App() {
         answers: {}
       });
     } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
       setQuizState({
         open: true,
         loading: false,
@@ -621,6 +827,47 @@ export default function App() {
         answers: {}
       });
     }
+  }
+
+  async function handleAuthSubmit() {
+    const username = authForm.username.trim();
+    const password = authForm.password;
+    if (!username || !password || authBusy) {
+      return;
+    }
+
+    setAuthBusy(true);
+    setAuthError("");
+
+    try {
+      const payload =
+        authMode === "signup"
+          ? await signUp(username, password)
+          : await signIn(username, password);
+
+      resetWorkspaceState();
+      setCurrentUser(payload.user || null);
+      setAuthForm({ username: "", password: "" });
+      setAuthStatus("authenticated");
+    } catch (error) {
+      setAuthError(error.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await signOut();
+    } catch (_error) {
+      // The local reset is still required if the server has already dropped the session.
+    }
+
+    resetWorkspaceState();
+    setCurrentUser(null);
+    setAuthForm({ username: "", password: "" });
+    setAuthError("");
+    setAuthStatus("anonymous");
   }
 
   const visibleUploadJobs = uploadJobs.filter((job) => {
@@ -650,6 +897,37 @@ export default function App() {
         rightSidebarOpen ? "minmax(280px, 320px)" : "86px"
       ].join(" ")
     };
+
+  if (authStatus === "loading") {
+    return (
+      <div className="auth-shell auth-loading-shell">
+        <div className="app-noise" />
+        <div className="orb orb-one" />
+        <div className="orb orb-two" />
+        <div className="orb orb-three" />
+        <div className="auth-loading">Loading your workspace...</div>
+      </div>
+    );
+  }
+
+  if (authStatus !== "authenticated") {
+    return (
+      <AuthScreen
+        mode={authMode}
+        form={authForm}
+        busy={authBusy}
+        error={authError}
+        onChange={(field, value) => {
+          setAuthForm((prev) => ({ ...prev, [field]: value }));
+        }}
+        onSubmit={() => void handleAuthSubmit()}
+        onToggleMode={() => {
+          setAuthError("");
+          setAuthMode((prev) => (prev === "signin" ? "signup" : "signin"));
+        }}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -685,6 +963,12 @@ export default function App() {
           <div className="status-chip pulse">
             {documents.length} doc{documents.length === 1 ? "" : "s"} loaded
           </div>
+          <div className="status-chip">
+            @{currentUser?.username}
+          </div>
+          <button className="small-button" type="button" onClick={() => void handleLogout()}>
+            Log out
+          </button>
           <button
             className="theme-toggle"
             type="button"
