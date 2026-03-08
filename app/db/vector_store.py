@@ -189,7 +189,7 @@ class VectorStore:
         """
         try:
             with self._lock:
-                # Find doc_id(s) associated with the filename
+                # Find doc_id(s) associated with the filename AND owner
                 doc_ids_to_remove = []
                 for doc_id, doc_data in self.documents.items():
                     metadata = doc_data.get("metadata", {})
@@ -197,7 +197,7 @@ class VectorStore:
                         doc_ids_to_remove.append(doc_id)
 
                 if not doc_ids_to_remove:
-                    logger.warning(f"No document found with filename {filename}")
+                    logger.warning(f"No document found for user {owner_username} with filename {filename}")
                     return False
 
                 # Delete from ChromaDB
@@ -263,6 +263,7 @@ class VectorStore:
                 filename = metadata.get("filename")
                 if metadata.get("owner_username") != owner_username or not filename:
                     continue
+                    
                 if filename not in unique_docs:
                     unique_docs[filename] = {
                         "filename": filename,

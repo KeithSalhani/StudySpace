@@ -2,7 +2,7 @@ import json
 import os
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
@@ -25,7 +25,7 @@ class JSONDatabase:
                 "username": username,
                 "password_hash": "",
                 "password_salt": "",
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
                 "tags": [],
                 "notes": [],
                 "sessions": [],
@@ -47,7 +47,7 @@ class JSONDatabase:
                 user.setdefault("username", username)
                 user.setdefault("password_hash", "")
                 user.setdefault("password_salt", "")
-                user.setdefault("created_at", datetime.utcnow().isoformat())
+                user.setdefault("created_at", datetime.now(timezone.utc).isoformat())
                 user.setdefault("tags", [])
                 user.setdefault("notes", [])
                 user.setdefault("sessions", [])
@@ -125,7 +125,7 @@ class JSONDatabase:
             session = {
                 "id": session_id,
                 "hash": session_hash,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
                 "expires_at": expires_at,
             }
             user.setdefault("sessions", []).append(session)
@@ -193,7 +193,7 @@ class JSONDatabase:
             note = {
                 "id": str(uuid.uuid4()),
                 "content": content,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat()
             }
             user.setdefault("notes", []).append(note)
             self.save()
