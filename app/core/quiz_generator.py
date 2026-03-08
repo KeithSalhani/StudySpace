@@ -32,7 +32,13 @@ class QuizGenerator:
         
         logger.info("Quiz Generator initialized with Gemini 3.1 Flash Lite Preview")
 
-    def generate_quiz(self, filename: str, num_questions: int = 5, difficulty: str = "Medium") -> Dict[str, Any]:
+    def generate_quiz(
+        self,
+        filename: str,
+        num_questions: int = 5,
+        difficulty: str = "Medium",
+        document_path: Optional[Path] = None,
+    ) -> Dict[str, Any]:
         """
         Generate a quiz from a document
 
@@ -46,7 +52,7 @@ class QuizGenerator:
         """
         try:
             # 1. Read the document content
-            md_path = self.processed_dir / f"{filename}.md"
+            md_path = document_path or (self.processed_dir / f"{filename}.md")
             
             if not md_path.exists():
                 raise FileNotFoundError(f"Processed document not found: {md_path}")

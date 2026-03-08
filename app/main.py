@@ -1,8 +1,8 @@
 """
 RAG Chat Application for Student Study Hub
 """
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Query, status
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -20,7 +20,25 @@ import threading
 import time
 import uuid
 
-from app.config import GEMINI_API_KEY, UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR, PROCESSED_DIR
+from app.auth import (
+    AuthenticatedUser,
+    SESSION_COOKIE_NAME,
+    create_password_record,
+    create_session_for_user,
+    get_current_user,
+    validate_password,
+    validate_username,
+    verify_password,
+)
+from app.config import (
+    GEMINI_API_KEY,
+    PROCESSED_DIR,
+    SESSION_COOKIE_SECURE,
+    STATIC_DIR,
+    TEMPLATES_DIR,
+    UPLOAD_DIR,
+    USERS_DIR,
+)
 from app.core.ingestion import DocumentProcessor
 from app.db.vector_store import VectorStore
 from app.core.rag import RAGChat
@@ -52,6 +70,41 @@ rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 db = JSONDatabase()
+app.state.db = db
+
+
+def _user_root(username: str) -> Path:
+    path = USERS_DIR / username
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _user_upload_dir(username: str) -> Path:
+    path = _user_root(username) / "uploads"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _user_processed_dir(username: str) -> Path:
+    path = _user_root(username) / "processed"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _set_session_cookie(response: Response, token: str, expires_at: datetime) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        expires=int(expires_at.timestamp()),
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
 
 
 def get_frontend_asset_version() -> str:
@@ -72,6 +125,7 @@ class UploadJobStatus(str, Enum):
 @dataclass
 class UploadJob:
     job_id: str
+    owner_username: str
     filename: str
     file_path: str
     status: str
@@ -124,10 +178,11 @@ class UploadJobManager:
         if worker and worker.is_alive():
             worker.join(timeout=timeout)
 
-    def enqueue(self, filename: str, file_path: Path) -> Dict[str, Any]:
+    def enqueue(self, owner_username: str, filename: str, file_path: Path) -> Dict[str, Any]:
         now, now_ts = self._now()
         job = UploadJob(
             job_id=uuid.uuid4().hex,
+            owner_username=owner_username,
             filename=filename,
             file_path=str(file_path),
             status=UploadJobStatus.QUEUED.value,
@@ -147,17 +202,20 @@ class UploadJobManager:
         self._queue.put(job.job_id)
         return self._to_public(job)
 
-    def list_jobs(self, limit: int = 20) -> List[Dict[str, Any]]:
+    def list_jobs(self, owner_username: str, limit: int = 20) -> List[Dict[str, Any]]:
         with self._lock:
-            jobs = sorted(self._jobs.values(), key=lambda item: item.created_ts, reverse=True)
+            jobs = [
+                job for job in self._jobs.values() if job.owner_username == owner_username
+            ]
+            jobs = sorted(jobs, key=lambda item: item.created_ts, reverse=True)
             if limit > 0:
                 jobs = jobs[:limit]
             return [self._to_public(job) for job in jobs]
 
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job(self, owner_username: str, job_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             job = self._jobs.get(job_id)
-            if not job:
+            if not job or job.owner_username != owner_username:
                 return None
             return self._to_public(job)
 
@@ -171,6 +229,7 @@ class UploadJobManager:
         item.pop("file_path", None)
         item.pop("created_ts", None)
         item.pop("updated_ts", None)
+        item.pop("owner_username", None)
         item["queue_position"] = None
 
         if item["status"] == UploadJobStatus.QUEUED.value:
@@ -218,6 +277,7 @@ class UploadJobManager:
             job = self._jobs.get(job_id)
             if not job:
                 return
+            owner_username = job.owner_username
             filename = job.filename
             file_path = Path(job.file_path)
 
@@ -233,15 +293,19 @@ class UploadJobManager:
         )
 
         try:
+            owner = self.database.get_user(owner_username)
+            if not owner:
+                raise ValueError("Owner not found for upload job")
+
             content = self.processor.process_document(str(file_path))
 
             self._update_job(job_id, stage="Saving processed file", progress=35)
-            processed_path = PROCESSED_DIR / f"{filename}.md"
+            processed_path = _user_processed_dir(owner_username) / f"{uuid.uuid4().hex}_{filename}.md"
             with open(processed_path, "w", encoding="utf-8") as out_file:
                 out_file.write(content)
 
             self._update_job(job_id, stage="Classifying document", progress=55)
-            current_tags = self.database.get_tags()
+            current_tags = self.database.get_tags(owner_username)
             if not current_tags:
                 current_tags = ["Forensics", "Machine Learning", "Security", "Study Material"]
 
@@ -254,13 +318,15 @@ class UploadJobManager:
                     logger.info("  %s: %.2f%%", label, score * 100)
 
             if predicted_tag:
-                self.database.add_tag(predicted_tag)
+                self.database.add_tag(owner_username, predicted_tag)
 
             self._update_job(job_id, stage="Indexing in vector database", progress=80)
             doc_id = f"{filename}_{uuid.uuid4().hex[:8]}"
             metadata = {
+                "owner_username": owner_username,
                 "filename": filename,
                 "path": str(file_path),
+                "processed_path": str(processed_path),
                 "tag": predicted_tag,
             }
             self.store.add_document(doc_id, content, metadata)
@@ -345,6 +411,15 @@ class ChatResponse(BaseModel):
     sources: List[dict]
 
 
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+
+class SessionResponse(BaseModel):
+    user: Dict[str, Any]
+
+
 class TagRequest(BaseModel):
     tag: str
 
@@ -367,6 +442,28 @@ class FlashcardRequest(BaseModel):
 def _save_upload_file(source_file, destination: Path) -> None:
     with open(destination, "wb") as buffer:
         shutil.copyfileobj(source_file, buffer)
+
+
+def _get_owned_document_metadata(owner_username: str, filename: str) -> Dict[str, Any]:
+    metadata = vector_store.get_document_metadata(owner_username, filename)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return metadata
+
+
+def _ensure_selected_files_owned(
+    owner_username: str,
+    selected_files: Optional[List[str]],
+) -> Optional[List[str]]:
+    if not selected_files:
+        return None
+
+    owned_files: List[str] = []
+    for filename in selected_files:
+        if not vector_store.get_document_metadata(owner_username, filename):
+            raise HTTPException(status_code=404, detail=f"Document not found: {filename}")
+        owned_files.append(filename)
+    return owned_files
 
 
 @app.on_event("startup")
@@ -392,19 +489,93 @@ async def home(request: Request):
     )
 
 
+@app.get("/auth/me", response_model=SessionResponse)
+async def auth_me(current_user: AuthenticatedUser = Depends(get_current_user)):
+    user = db.get_user(current_user.username)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return SessionResponse(user=user)
+
+
+@app.post("/auth/signup", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+async def auth_signup(request: Request, response: Response, payload: AuthRequest):
+    try:
+        username = validate_username(payload.username)
+        password = validate_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    password_hash, password_salt = create_password_record(password)
+    try:
+        user = db.create_user(username, password_hash, password_salt)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    _user_upload_dir(username)
+    _user_processed_dir(username)
+
+    session_value, expires_at = create_session_for_user(db, username)
+    _set_session_cookie(response, session_value, expires_at)
+    return SessionResponse(user=user)
+
+
+@app.post("/auth/signin", response_model=SessionResponse)
+async def auth_signin(request: Request, response: Response, payload: AuthRequest):
+    try:
+        username = validate_username(payload.username)
+        password = validate_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    user_record = db.get_user_credentials(username)
+    if not user_record or not verify_password(
+        password,
+        user_record["password_hash"],
+        user_record["password_salt"],
+    ):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    user = db.get_user(username)
+    session_value, expires_at = create_session_for_user(db, username)
+    _set_session_cookie(response, session_value, expires_at)
+    return SessionResponse(user=user)
+
+
+@app.post("/auth/logout")
+async def auth_logout(
+    request: Request,
+    response: Response,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    del current_user
+    session_value = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_value and "." in session_value:
+        session_id = session_value.split(".", 1)[0]
+        db.delete_session(session_id)
+    _clear_session_cookie(response)
+    return {"message": "Logged out"}
+
+
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """Upload and enqueue a document for background processing"""
     filename = os.path.basename(file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     storage_name = f"{uuid.uuid4().hex}_{filename}"
-    file_path = UPLOAD_DIR / storage_name
+    file_path = _user_upload_dir(current_user.username) / storage_name
 
     try:
         await asyncio.to_thread(_save_upload_file, file.file, file_path)
-        job = upload_jobs.enqueue(filename=filename, file_path=file_path)
+        job = upload_jobs.enqueue(
+            owner_username=current_user.username,
+            filename=filename,
+            file_path=file_path,
+        )
         return {
             "message": f"Document '{filename}' upload accepted",
             "job": job,
@@ -418,49 +589,61 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @app.get("/upload-jobs")
-async def list_upload_jobs(limit: int = Query(default=25, ge=1, le=100)):
+async def list_upload_jobs(
+    limit: int = Query(default=25, ge=1, le=100),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """List recent upload jobs and their processing status"""
-    return {"jobs": upload_jobs.list_jobs(limit=limit)}
+    return {"jobs": upload_jobs.list_jobs(current_user.username, limit=limit)}
 
 
 @app.get("/upload-jobs/{job_id}")
-async def get_upload_job(job_id: str):
+async def get_upload_job(job_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Get a single upload job status"""
-    job = upload_jobs.get_job(job_id)
+    job = upload_jobs.get_job(current_user.username, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Upload job not found")
     return job
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Handle chat requests with RAG"""
     try:
-        response, sources = await asyncio.to_thread(rag_chat.chat, request.message, request.selected_files)
+        selected_files = _ensure_selected_files_owned(current_user.username, request.selected_files)
+        response, sources = await asyncio.to_thread(
+            rag_chat.chat,
+            request.message,
+            current_user.username,
+            selected_files,
+        )
         return ChatResponse(response=response, sources=sources)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing chat: {str(e)}")
 
 
 @app.get("/documents")
-async def list_documents():
+async def list_documents(current_user: AuthenticatedUser = Depends(get_current_user)):
     """List all uploaded documents"""
-    return {"documents": vector_store.list_documents()}
+    return {"documents": vector_store.list_documents(current_user.username)}
 
 
 @app.delete("/documents/{filename}")
-async def delete_document(filename: str):
+async def delete_document(filename: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a document"""
     try:
-        paths_to_delete = vector_store.get_document_paths(filename)
+        metadata = _get_owned_document_metadata(current_user.username, filename)
+        paths_to_delete = vector_store.get_document_paths(current_user.username, filename)
 
-        if vector_store.delete_document(filename):
+        if vector_store.delete_document(current_user.username, filename):
             for path in paths_to_delete:
                 file_path = Path(path)
                 if file_path.exists():
                     file_path.unlink(missing_ok=True)
 
-            processed_path = PROCESSED_DIR / f"{filename}.md"
+            processed_path = Path(metadata["processed_path"])
             if processed_path.exists():
                 processed_path.unlink(missing_ok=True)
 
@@ -476,61 +659,64 @@ async def delete_document(filename: str):
 
 # Tag Endpoints
 @app.get("/tags")
-async def get_tags():
+async def get_tags(current_user: AuthenticatedUser = Depends(get_current_user)):
     """Get all tags"""
-    return {"tags": db.get_tags()}
+    return {"tags": db.get_tags(current_user.username)}
 
 
 @app.post("/tags")
-async def add_tag(request: TagRequest):
+async def add_tag(request: TagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Add a new tag"""
-    if db.add_tag(request.tag):
+    if db.add_tag(current_user.username, request.tag):
         return {"message": "Tag added successfully", "tag": request.tag}
     raise HTTPException(status_code=400, detail="Tag already exists")
 
 
 @app.delete("/tags/{tag_name}")
-async def delete_tag(tag_name: str):
+async def delete_tag(tag_name: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a tag"""
-    if db.delete_tag(tag_name):
+    if db.delete_tag(current_user.username, tag_name):
         return {"message": "Tag deleted successfully"}
     raise HTTPException(status_code=404, detail="Tag not found")
 
 
 # Note Endpoints
 @app.get("/notes")
-async def get_notes():
+async def get_notes(current_user: AuthenticatedUser = Depends(get_current_user)):
     """Get all notes"""
-    return {"notes": db.get_notes()}
+    return {"notes": db.get_notes(current_user.username)}
 
 
 @app.post("/notes")
-async def add_note(request: NoteRequest):
+async def add_note(request: NoteRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Add a new note"""
-    note = db.add_note(request.content)
+    note = db.add_note(current_user.username, request.content)
     return {"message": "Note added successfully", "note": note}
 
 
 @app.delete("/notes/{note_id}")
-async def delete_note(note_id: str):
+async def delete_note(note_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a note"""
-    if db.delete_note(note_id):
+    if db.delete_note(current_user.username, note_id):
         return {"message": "Note deleted successfully"}
     raise HTTPException(status_code=404, detail="Note not found")
 
 
 @app.post("/quiz/generate")
-async def generate_quiz(request: QuizRequest):
+async def generate_quiz(request: QuizRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Generate a quiz from a document"""
     try:
+        metadata = _get_owned_document_metadata(current_user.username, request.filename)
         quiz = await asyncio.to_thread(
             quiz_generator.generate_quiz,
             request.filename,
             request.num_questions,
             request.difficulty,
-            owner_username="legacy"
+            Path(metadata["processed_path"]),
         )
         return quiz
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Document not found or not processed yet")
     except Exception as e:
@@ -538,16 +724,19 @@ async def generate_quiz(request: QuizRequest):
 
 
 @app.post("/flashcards/generate")
-async def generate_flashcards(request: FlashcardRequest):
+async def generate_flashcards(request: FlashcardRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Generate flashcards from a document"""
     try:
+        metadata = _get_owned_document_metadata(current_user.username, request.filename)
         flashcards = await asyncio.to_thread(
             flashcard_generator.generate_flashcards,
             request.filename,
             request.num_cards,
-            owner_username="legacy"
+            Path(metadata["processed_path"]),
         )
         return flashcards
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Document not found or not processed yet")
     except Exception as e:

@@ -1,140 +1,164 @@
-# Student Study Hub RAG Chat
+# Study Space
 
-A comprehensive RAG (Retrieval-Augmented Generation) chat application designed for students. Upload your academic documents (PDF, DOCX, etc.), let the system automatically classify them, and chat with an AI that understands your specific study materials.
+Study Space is a FastAPI + React study assistant for document-grounded chat, quizzes, flashcards, notes, and topic tagging. Users sign up with a username and password, upload their own study material, and interact only with data that belongs to their account.
 
-## Features
+## What It Does
 
-- **📄 Multi-Format Document Support**: Upload PDF, DOCX, TXT, and MD files.
-- **🧠 Smart Auto-Classification**: Automatically categorizes documents into subjects (e.g., "Machine Learning", "Security") using zero-shot classification (`facebook/bart-large-mnli`).
-- **🤖 Advanced RAG Chat**: Powered by **Google Gemini-2.5 Flash** for fast, context-aware responses based on your documents.
-- **🔍 Semantic Search**: Uses **ChromaDB** and **Sentence Transformers** (`all-MiniLM-L6-v2`) to find the most relevant content for your questions.
-- **🏷️ Tag Management**: Organize content with custom tags.
-- **📝 Integrated Notes**: Quick note-taking feature to jot down thoughts while studying.
-- **📚 Source Citations**: Chat responses cite the specific documents and chunks used.
-- **💾 Persistent Storage**: All data (vectors, tags, notes) is saved locally.
+- Upload PDF, DOCX, TXT, and Markdown study documents
+- Process and classify uploaded documents into topic tags
+- Ask questions against your own indexed material with RAG
+- Generate quizzes and flashcards from a selected document
+- Save personal notes and manage personal tags
+- Keep each user’s documents, notes, sessions, and retrieval results isolated
 
-## Architecture
+## Stack
 
-- **Frontend**: React + Vite single-page interface, built into backend-served static assets.
-- **Backend**: FastAPI API routes for upload, chat, document management, tags, notes, quizzes, and flashcards.
-- **Document Processing**: `MarkItDown` for converting various formats to text.
-- **NLP & Classification**: `transformers` pipeline for zero-shot classification.
-- **Vector Store**: `ChromaDB` for storing and querying document embeddings.
-- **LLM Integration**: `google-genai` SDK connecting to Gemini 3.1 Flash Lite Preview.
-- **Database**: Simple JSON-based storage for tags and notes (`db.json`).
+- Frontend: React + Vite
+- Backend: FastAPI
+- Vector search: ChromaDB
+- Embeddings: `all-MiniLM-L6-v2`
+- LLM features: Google Gemini via `google-genai`
+- Metadata store: local JSON file
+
+## Authentication And Isolation
+
+### Login model
+
+- Accounts are stored in `db.json` through `app/db/metadata.py`.
+- Passwords are stored as PBKDF2 hashes with per-user salts. The hashing and session helpers live in `app/auth.py`.
+- Successful sign-in/sign-up issues an `HttpOnly` session cookie named `studyspace_session`.
+- Sessions are validated server-side on every protected request.
+
+### How user data is separated
+
+- Notes and tags are stored per user in `db.json`.
+- Uploaded source files are stored under `app/users/<username>/uploads/`.
+- Processed Markdown files are stored under `app/users/<username>/processed/`.
+- Upload job history is kept in memory but filtered per authenticated user before being returned.
+- ChromaDB is currently shared physically but segregated logically:
+  - one persistent Chroma database directory
+  - one shared collection
+  - every stored chunk includes `owner_username`
+  - every search, list, metadata lookup, and delete path filters on `owner_username`
+
+That means users do not get a separate Chroma database right now. Isolation is enforced through ownership metadata and mandatory filters in the vector-store layer.
+
+## Storage Layout
+
+Current generated storage paths:
+
+```text
+app/chroma_db/              Shared Chroma persistence
+app/users/<username>/uploads/
+app/users/<username>/processed/
+db.json                     User accounts, sessions, notes, tags
+```
+
+Legacy root-level generated directories such as `uploads/`, `processed/`, and `chroma_db/` are obsolete and should not be used.
 
 ## Project Structure
 
-```
+```text
+.
 ├── app/
-│   ├── main.py                 # FastAPI application entry point & API routes
-│   ├── config.py               # Configuration settings (paths, model names, keys)
-│   ├── core/                   # Core business logic
-│   │   ├── ingestion.py        # Handles file reading and Docling conversion
-│   │   ├── classification.py   # Zero-shot document classification logic
-│   │   ├── rag.py              # RAG implementation using Gemini API
-│   │   ├── quiz_generator.py   # AI-powered quiz generation
-│   │   └── flashcard_generator.py # AI-powered flashcard generation
-│   ├── db/                     # Data access layer
-│   │   ├── vector_store.py     # ChromaDB wrapper for adding/searching documents
-│   │   └── metadata.py         # JSON database manager for tags and notes
-│   ├── templates/              # HTML shell used to boot the built React app
-│   └── static/                 # Built frontend assets served by FastAPI
-├── frontend/                   # React + Vite source workspace
-├── db.json                     # Local storage for tags and notes (auto-created)
-├── requirements.txt            # Python dependencies
-├── uploads/                    # Directory for uploaded source files
-├── chroma_db/                  # Directory for Vector database persistence
-└── tests/                      # Pytest suite
+│   ├── auth.py
+│   ├── config.py
+│   ├── main.py
+│   ├── core/
+│   │   ├── classification.py
+│   │   ├── flashcard_generator.py
+│   │   ├── ingestion.py
+│   │   ├── quiz_generator.py
+│   │   └── rag.py
+│   ├── db/
+│   │   ├── metadata.py
+│   │   └── vector_store.py
+│   ├── static/
+│   ├── templates/
+│   └── users/
+├── frontend/
+├── tests/
+├── requirements.txt
+└── README.md
 ```
 
-## Installation & Setup
+## Setup
 
-### 1. Prerequisites
-- Python 3.8+
-- A Google Gemini API Key (Get one from [Google AI Studio](https://aistudio.google.com/app/apikey))
+### Prerequisites
 
-### 2. Clone and Setup Environment
+- Python 3.12 recommended
+- Node.js for the frontend build
+- A valid `GEMINI_API_KEY`
+
+### Install
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd StudySpace_Interim
-
-# Create a virtual environment (recommended)
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 3. Configuration
-Set your Gemini API key. You can do this via an environment variable:
-
-```bash
-export GEMINI_API_KEY="your_actual_api_key_here"
-```
-
-Or create a `.env` file in the project root (if you have `python-dotenv` set up to read it, though the current code relies on `os.getenv` which works with system env vars or `.env` if loaded):
-```
-GEMINI_API_KEY=your_api_key_here
-```
-
-## Usage
-
-### Start the Application
-
-Build the frontend first:
-
-```bash
 cd frontend
 npm install
 npm run build
 cd ..
 ```
 
-Then start the backend:
+### Configure
+
+Set the Gemini key in your environment or `.env`:
+
+```bash
+export GEMINI_API_KEY="your_key_here"
+```
+
+Optional auth-related env vars:
+
+```bash
+SESSION_TTL_DAYS=7
+SESSION_COOKIE_SECURE=false
+```
+
+## Run
 
 ```bash
 uvicorn app.main:app --reload
 ```
-The server will start at `http://127.0.0.1:8000`.
 
-### Using the Interface
+Open `http://127.0.0.1:8000`, create an account, then upload documents and use the workspace.
 
-1.  **Open Browser**: Navigate to `http://localhost:8000`.
-2.  **Upload Documents**:
-    *   Drag and drop files or click to upload.
-    *   The system will process the text and automatically assign a tag (e.g., "Forensics").
-3.  **Manage Tags**:
-    *   View the auto-assigned tags.
-    *   Add new custom tags or delete existing ones via the UI or API.
-4.  **Chat with AI**:
-    *   Type your question in the chat box.
-    *   The AI will search your uploaded documents and provide an answer with citations.
-5.  **Take Notes**:
-    *   Use the Notes section to save important information alongside your chat.
+## Main API Routes
 
-### API Endpoints
+Auth:
 
-*   `POST /upload`: Upload and process a file.
-*   `POST /chat`: Send a message to the RAG chat.
-*   `GET /documents`: List all indexed documents.
-*   `DELETE /documents/{filename}`: Remove a document.
-*   `GET/POST/DELETE /tags`: Manage document categories.
-*   `GET/POST/DELETE /notes`: Manage study notes.
+- `POST /auth/signup`
+- `POST /auth/signin`
+- `POST /auth/logout`
+- `GET /auth/me`
 
-## Troubleshooting
+Workspace:
 
-*   **Missing API Key**: Ensure `GEMINI_API_KEY` is set in your environment.
-*   **Processing Errors**: If a specific PDF fails, check if it's a scanned image (OCR might be needed, which `MarkItDown` supports depending on setup, but standard text extraction is default).
-*   **Model Errors**: If `gemini-2.5-flash` is not available for your key/region, update the model name in `rag_chat.py`.
+- `POST /upload`
+- `GET /upload-jobs`
+- `GET /upload-jobs/{job_id}`
+- `POST /chat`
+- `GET /documents`
+- `DELETE /documents/{filename}`
+- `GET/POST/DELETE /tags`
+- `GET/POST/DELETE /notes`
+- `POST /quiz/generate`
+- `POST /flashcards/generate`
 
-## Future Enhancements
+All workspace routes require an authenticated session.
 
-*   Module auto-classification improvements.
-*   Administrative data extraction (deadlines, contacts).
-*   Quiz generation from study materials.
-*   Flashcard creation.
-*   Calendar integration.
+## Verification
+
+Useful commands:
+
+```bash
+./venv/bin/python -m pytest tests/test_db.py tests/test_vector_store.py tests/test_api.py
+cd frontend && npm run build
+```
+
+## Notes
+
+- Chroma isolation is currently logical, not physical. If you want stronger tenant isolation, the next step is per-user collections or per-user Chroma directories.
+- The repo still has some compatibility constants for old shared upload/processed paths, but active document storage is user-scoped under `app/users/`.

@@ -1,12 +1,12 @@
 """
 Vector store module using ChromaDB and sentence transformers
 """
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+import threading
+
 import chromadb
 from sentence_transformers import SentenceTransformer
-import logging
-from typing import List, Dict, Any, Tuple
-import uuid
-import threading
 
 from app.config import COLLECTION_NAME, CHROMA_DB_DIR, EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, DEFAULT_SEARCH_RESULTS
 
@@ -57,10 +57,6 @@ class VectorStore:
 
                     doc_id = metadata.get('doc_id')
                     if doc_id and doc_id not in seen_doc_ids:
-                        # Defensive update: Ensure owner_username and processed_path exist for legacy data
-                        metadata.setdefault('owner_username', 'legacy')
-                        metadata.setdefault('processed_path', None)
-                        
                         # Create a dummy entry for self.documents to track existence
                         self.documents[doc_id] = {
                             "content": "(Content loaded from DB)", # We don't load full content to memory on init
@@ -72,7 +68,7 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error loading documents from collection: {str(e)}")
 
-    def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any] = None, owner_username: str = "legacy", processed_path: str = None):
+    def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any] = None):
         """
         Add a document to the vector store
 
@@ -99,9 +95,7 @@ class VectorStore:
                     chunk_metadata.update({
                         "doc_id": doc_id,
                         "chunk_index": i,
-                        "total_chunks": len(chunks),
-                        "owner_username": owner_username,
-                        "processed_path": processed_path
+                        "total_chunks": len(chunks)
                     })
                     metadatas.append(chunk_metadata)
 
@@ -126,7 +120,13 @@ class VectorStore:
             logger.error(f"Error adding document {doc_id}: {str(e)}")
             raise
 
-    def search(self, query: str, n_results: int = 5, selected_files: List[str] = None, owner_username: str = None) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        owner_username: str,
+        n_results: int = 5,
+        selected_files: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Search for relevant documents
 
@@ -145,21 +145,19 @@ class VectorStore:
 
             kwargs = {
                 "query_embeddings": [query_embedding.tolist()],
-                "n_results": n_results
+                "n_results": n_results,
             }
-            
-            where_clauses = {}
-            if owner_username:
-                where_clauses["owner_username"] = owner_username
-                
+            filters: List[Dict[str, Any]] = [{"owner_username": owner_username}]
             if selected_files:
                 if len(selected_files) == 1:
-                    where_clauses["filename"] = selected_files[0]
+                    filters.append({"filename": selected_files[0]})
                 else:
-                    where_clauses["filename"] = {"$in": selected_files}
-            
-            if where_clauses:
-                kwargs["where"] = where_clauses
+                    filters.append({"filename": {"$in": selected_files}})
+
+            if len(filters) == 1:
+                kwargs["where"] = filters[0]
+            else:
+                kwargs["where"] = {"$and": filters}
 
             with self._lock:
                 # Search in collection
@@ -182,7 +180,7 @@ class VectorStore:
             logger.error(f"Error searching: {str(e)}")
             raise
 
-    def delete_document(self, filename: str, owner_username: str) -> bool:
+    def delete_document(self, owner_username: str, filename: str):
         """
         Delete a document from the vector store by filename
 
@@ -194,8 +192,8 @@ class VectorStore:
                 # Find doc_id(s) associated with the filename AND owner
                 doc_ids_to_remove = []
                 for doc_id, doc_data in self.documents.items():
-                    metadata = doc_data.get('metadata', {})
-                    if metadata.get('filename') == filename and metadata.get('owner_username') == owner_username:
+                    metadata = doc_data.get("metadata", {})
+                    if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
                         doc_ids_to_remove.append(doc_id)
 
                 if not doc_ids_to_remove:
@@ -215,7 +213,13 @@ class VectorStore:
             logger.error(f"Error deleting document {filename}: {str(e)}")
             raise
 
-    def get_relevant_context(self, query: str, n_results: int = DEFAULT_SEARCH_RESULTS, selected_files: List[str] = None, owner_username: str = None) -> Tuple[str, List[Dict[str, Any]]]:
+    def get_relevant_context(
+        self,
+        query: str,
+        owner_username: str,
+        n_results: int = DEFAULT_SEARCH_RESULTS,
+        selected_files: Optional[List[str]] = None,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Get relevant context for RAG
 
@@ -227,7 +231,12 @@ class VectorStore:
         Returns:
             Tuple of (context_string, sources_list)
         """
-        results = self.search(query, n_results, selected_files=selected_files, owner_username=owner_username)
+        results = self.search(
+            query,
+            owner_username=owner_username,
+            n_results=n_results,
+            selected_files=selected_files,
+        )
 
         # Combine documents into context
         context_parts = []
@@ -252,9 +261,7 @@ class VectorStore:
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
                 filename = metadata.get("filename")
-                current_owner = metadata.get("owner_username")
-                
-                if not filename or current_owner != owner_username:
+                if metadata.get("owner_username") != owner_username or not filename:
                     continue
                     
                 if filename not in unique_docs:
@@ -264,20 +271,28 @@ class VectorStore:
                     }
             return list(unique_docs.values())
 
-    def get_document_paths(self, filename: str, owner_username: str) -> List[str]:
+    def get_document_paths(self, owner_username: str, filename: str) -> List[str]:
         """Return all stored file paths linked to a logical filename."""
         with self._lock:
             seen_paths = set()
             paths: List[str] = []
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
-                if metadata.get("filename") != filename or metadata.get('owner_username') != owner_username:
+                if metadata.get("owner_username") != owner_username or metadata.get("filename") != filename:
                     continue
                 path = metadata.get("path")
                 if path and path not in seen_paths:
                     seen_paths.add(path)
                     paths.append(path)
             return paths
+
+    def get_document_metadata(self, owner_username: str, filename: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            for doc_data in self.documents.values():
+                metadata = doc_data.get("metadata", {})
+                if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
+                    return dict(metadata)
+        return None
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """

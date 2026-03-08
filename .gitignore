@@ -1,45 +1,35 @@
-# Virtual environment
+# Python
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+
+# Frontend
 frontend/node_modules/
 app/static/dist/
 
-# Data directories
+# Local app data
+db.json
 uploads/
-chroma_db/
-*.db
 processed/
-conductor/
+chroma_db/
+app/uploads/
+app/processed/
+app/chroma_db/
+app/users/
+*.db
 
-# Logs
-*.log
-
-# OS files
+# Environment and editor files
+.env
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# IDE files
-.vscode/
-.idea/
-
-# Environment variables (don't commit real API keys)
-.env
-
-chroma_db/
-chroma_data/
-ragtest.7z
-report.7z
-
-
-
-processedconductor/
-app/processed/
-frontend/node_modules/
-
 # Local artifacts
+*.log
 screenshot.png
 gemini.md
-pr.md
 pw.md

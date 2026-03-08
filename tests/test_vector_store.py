@@ -59,42 +59,49 @@ def test_search(vector_store):
     }
     
     # Execute
-    results = vector_store.search("query")
+    results = vector_store.search("query", owner_username="alice")
     
     # Verify
     assert len(results) == 1
     assert results[0]['document'] == 'res1'
+    vector_store.collection.query.assert_called_once_with(
+        query_embeddings=[0.1],
+        n_results=5,
+        where={"owner_username": "alice"}
+    )
 
 def test_delete_document(vector_store):
     # Setup
     # Populate internal state manually as it matches filename
     vector_store.documents = {
-        "doc1": {"metadata": {"filename": "target.txt"}},
-        "doc2": {"metadata": {"filename": "other.txt"}}
+        "doc1": {"metadata": {"filename": "target.txt", "owner_username": "alice"}},
+        "doc2": {"metadata": {"filename": "target.txt", "owner_username": "bob"}},
+        "doc3": {"metadata": {"filename": "other.txt", "owner_username": "alice"}}
     }
     
     # Execute
-    result = vector_store.delete_document("target.txt")
+    result = vector_store.delete_document("alice", "target.txt")
     
     # Verify
     assert result is True
     assert "doc1" not in vector_store.documents
     assert "doc2" in vector_store.documents
+    assert "doc3" in vector_store.documents
     vector_store.collection.delete.assert_called_once_with(where={"doc_id": "doc1"})
 
 def test_delete_document_not_found(vector_store):
     vector_store.documents = {}
-    assert vector_store.delete_document("missing.txt") is False
+    assert vector_store.delete_document("alice", "missing.txt") is False
 
 def test_list_documents_returns_unique_filenames_with_tag_fallback(vector_store):
     vector_store.documents = {
-        "doc1": {"metadata": {"filename": "alpha.pdf", "tag": "Security"}},
-        "doc2": {"metadata": {"filename": "alpha.pdf", "tag": "ShouldBeIgnored"}},
-        "doc3": {"metadata": {"filename": "beta.pdf"}},
-        "doc4": {"metadata": {"path": "/tmp/no-filename.pdf"}},
+        "doc1": {"metadata": {"filename": "alpha.pdf", "tag": "Security", "owner_username": "alice"}},
+        "doc2": {"metadata": {"filename": "alpha.pdf", "tag": "ShouldBeIgnored", "owner_username": "alice"}},
+        "doc3": {"metadata": {"filename": "beta.pdf", "owner_username": "alice"}},
+        "doc4": {"metadata": {"filename": "gamma.pdf", "owner_username": "bob"}},
+        "doc5": {"metadata": {"path": "/tmp/no-filename.pdf", "owner_username": "alice"}},
     }
-
-    docs = vector_store.list_documents()
+    docs = vector_store.list_documents("alice")
     docs_by_name = {item["filename"]: item for item in docs}
 
     assert len(docs) == 2
@@ -103,13 +110,13 @@ def test_list_documents_returns_unique_filenames_with_tag_fallback(vector_store)
 
 def test_get_document_paths_filters_by_filename_and_deduplicates(vector_store):
     vector_store.documents = {
-        "doc1": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a1.pdf"}},
-        "doc2": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a1.pdf"}},
-        "doc3": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a2.pdf"}},
-        "doc4": {"metadata": {"filename": "beta.pdf", "path": "/tmp/b1.pdf"}},
-        "doc5": {"metadata": {"filename": "alpha.pdf"}},
+        "doc1": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a1.pdf", "owner_username": "alice"}},
+        "doc2": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a1.pdf", "owner_username": "alice"}},
+        "doc3": {"metadata": {"filename": "alpha.pdf", "path": "/tmp/a2.pdf", "owner_username": "alice"}},
+        "doc4": {"metadata": {"filename": "beta.pdf", "path": "/tmp/b1.pdf", "owner_username": "alice"}},
+        "doc5": {"metadata": {"filename": "alpha.pdf", "owner_username": "bob"}},
     }
 
-    paths = vector_store.get_document_paths("alpha.pdf")
+    paths = vector_store.get_document_paths("alice", "alpha.pdf")
 
     assert paths == ["/tmp/a1.pdf", "/tmp/a2.pdf"]
