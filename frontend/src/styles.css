@@ -302,6 +302,18 @@ button {
   color: var(--text);
 }
 
+.docs-chip,
+.user-chip,
+.small-button {
+  white-space: nowrap;
+}
+
+.user-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .pulse {
   box-shadow: 0 0 0 0 rgba(109, 74, 255, 0.28);
   animation: pulse 3s infinite;
@@ -1265,40 +1277,81 @@ body.dark-mode .message.bot {
 
 @media (max-width: 900px) {
   .app-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   .app-topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 10px;
   }
 
   .app-frame {
     display: block;
-    height: calc(100vh - 132px);
+    flex: 1;
+    min-height: 0;
+    height: auto;
   }
 
   .chat-panel {
     height: 100%;
+    border-radius: 24px;
+  }
+
+  .glass-panel,
+  .panel {
+    border-radius: 24px;
+  }
+
+  .topbar-brand {
+    gap: 10px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    gap: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+
+  .topbar-actions > * {
+    flex: 0 0 auto;
+  }
+
+  .status-chip,
+  .small-button {
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 0.86rem;
+  }
+
+  .user-chip {
+    max-width: 44vw;
+  }
+
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
   }
 
   .side-panel.mobile {
     position: fixed;
-    top: 86px;
-    bottom: 12px;
-    width: min(86vw, 360px);
+    top: 72px;
+    bottom: 10px;
+    width: min(82vw, 320px);
     z-index: 20;
     transform: translateX(-110%);
   }
 
   .right-panel.mobile {
-    right: 12px;
+    right: 10px;
     left: auto;
     transform: translateX(110%);
   }
 
   .left-panel.mobile {
-    left: 12px;
+    left: 10px;
   }
 
   .side-panel.mobile.open {
@@ -1306,7 +1359,7 @@ body.dark-mode .message.bot {
   }
 
   .side-panel.mobile.collapsed {
-    width: min(86vw, 360px);
+    width: min(82vw, 320px);
   }
 
   .side-panel.mobile.collapsed .panel-body,
@@ -1322,12 +1375,57 @@ body.dark-mode .message.bot {
   }
 
   .side-panel.mobile.collapsed .panel-header {
-    padding: 18px;
+    padding: 14px 14px 12px;
     justify-content: space-between;
     border-bottom: 1px solid var(--border);
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent),
       radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 52%);
+  }
+
+  .side-panel.mobile .panel-header,
+  .chat-header {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .side-panel.mobile .panel-body,
+  .chat-body {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .chat-footer {
+    padding: 10px 12px 12px;
+  }
+
+  .chat-hero,
+  .hero-card,
+  .starter-card,
+  .message,
+  .composer-shell,
+  .banner {
+    border-radius: 20px;
+  }
+
+  .chat-hero,
+  .hero-card,
+  .starter-card {
+    padding: 14px;
+  }
+
+  .message {
+    max-width: 92%;
+    padding: 14px 15px;
+  }
+
+  .composer-shell {
+    padding: 10px;
+  }
+
+  .send-button {
+    width: 54px;
+    height: 54px;
   }
 
   .mobile-only,
@@ -1347,26 +1445,17 @@ body.dark-mode .message.bot {
 }
 
 @media (max-width: 720px) {
-  .topbar-copy h1 {
-    font-size: 1.2rem;
-  }
-
   .topbar-brand {
-    align-items: flex-start;
+    align-items: center;
   }
 
   .brand-mark {
-    width: 48px;
-    height: 48px;
+    width: 42px;
+    height: 42px;
   }
 
-  .hero-card,
-  .chat-hero,
-  .panel-body,
-  .chat-header,
-  .chat-footer {
-    padding-left: 14px;
-    padding-right: 14px;
+  .eyebrow {
+    font-size: 1rem;
   }
 
   .hero-metrics,
@@ -1376,6 +1465,21 @@ body.dark-mode .message.bot {
 
   .status-chip {
     align-self: flex-start;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .status-chip,
+  .small-button {
+    min-height: 38px;
+    font-size: 0.82rem;
+    padding: 0 10px;
+  }
+
+  .user-chip {
+    max-width: 40vw;
   }
 
   .message {

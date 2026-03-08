@@ -888,6 +888,9 @@ export default function App() {
     .map((doc) => doc.filename);
   const hasStudioSelection = Boolean(selectedDocument);
   const isMobile = viewport.isMobile;
+  const documentStatusLabel = isMobile
+    ? `${documents.length} doc${documents.length === 1 ? "" : "s"}`
+    : `${documents.length} doc${documents.length === 1 ? "" : "s"} loaded`;
   const frameStyle = isMobile
     ? undefined
     : {
@@ -948,10 +951,10 @@ export default function App() {
           </div>
         </div>
         <div className="topbar-actions">
-          <div className="status-chip pulse">
-            {documents.length} doc{documents.length === 1 ? "" : "s"} loaded
+          <div className="status-chip docs-chip pulse">
+            {documentStatusLabel}
           </div>
-          <div className="status-chip">
+          <div className="status-chip user-chip">
             @{currentUser?.username}
           </div>
           <button className="small-button" type="button" onClick={() => void handleLogout()}>
