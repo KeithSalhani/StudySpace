@@ -15,7 +15,8 @@ A comprehensive RAG (Retrieval-Augmented Generation) chat application designed f
 
 ## Architecture
 
-- **Frontend/Backend**: FastAPI with Jinja2 templates for a lightweight, responsive web interface.
+- **Frontend**: React + Vite single-page interface, built into backend-served static assets.
+- **Backend**: FastAPI API routes for upload, chat, document management, tags, notes, quizzes, and flashcards.
 - **Document Processing**: `MarkItDown` for converting various formats to text.
 - **NLP & Classification**: `transformers` pipeline for zero-shot classification.
 - **Vector Store**: `ChromaDB` for storing and querying document embeddings.
@@ -37,8 +38,9 @@ A comprehensive RAG (Retrieval-Augmented Generation) chat application designed f
 │   ├── db/                     # Data access layer
 │   │   ├── vector_store.py     # ChromaDB wrapper for adding/searching documents
 │   │   └── metadata.py         # JSON database manager for tags and notes
-│   ├── templates/              # HTML templates for the web UI
-│   └── static/                 # Static assets (CSS, JS)
+│   ├── templates/              # HTML shell used to boot the built React app
+│   └── static/                 # Built frontend assets served by FastAPI
+├── frontend/                   # React + Vite source workspace
 ├── db.json                     # Local storage for tags and notes (auto-created)
 ├── requirements.txt            # Python dependencies
 ├── uploads/                    # Directory for uploaded source files
@@ -82,6 +84,17 @@ GEMINI_API_KEY=your_api_key_here
 ## Usage
 
 ### Start the Application
+
+Build the frontend first:
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+Then start the backend:
 
 ```bash
 uvicorn app.main:app --reload
