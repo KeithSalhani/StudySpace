@@ -510,6 +510,7 @@ async def generate_quiz(request: QuizRequest):
             request.filename,
             request.num_questions,
             request.difficulty,
+            owner_username="legacy"
         )
         return quiz
     except FileNotFoundError:
@@ -526,6 +527,7 @@ async def generate_flashcards(request: FlashcardRequest):
             flashcard_generator.generate_flashcards,
             request.filename,
             request.num_cards,
+            owner_username="legacy"
         )
         return flashcards
     except FileNotFoundError:

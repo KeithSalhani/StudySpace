@@ -63,7 +63,7 @@ class JSONDatabase:
             note = {
                 "id": str(uuid.uuid4()),
                 "content": content,
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             }
             self.data["notes"].append(note)
             self.save()

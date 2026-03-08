@@ -57,6 +57,10 @@ class VectorStore:
 
                     doc_id = metadata.get('doc_id')
                     if doc_id and doc_id not in seen_doc_ids:
+                        # Defensive update: Ensure owner_username and processed_path exist for legacy data
+                        metadata.setdefault('owner_username', 'legacy')
+                        metadata.setdefault('processed_path', None)
+                        
                         # Create a dummy entry for self.documents to track existence
                         self.documents[doc_id] = {
                             "content": "(Content loaded from DB)", # We don't load full content to memory on init
@@ -68,7 +72,7 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error loading documents from collection: {str(e)}")
 
-    def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any] = None):
+    def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any] = None, owner_username: str = "legacy", processed_path: str = None):
         """
         Add a document to the vector store
 
@@ -95,7 +99,9 @@ class VectorStore:
                     chunk_metadata.update({
                         "doc_id": doc_id,
                         "chunk_index": i,
-                        "total_chunks": len(chunks)
+                        "total_chunks": len(chunks),
+                        "owner_username": owner_username,
+                        "processed_path": processed_path
                     })
                     metadatas.append(chunk_metadata)
 
@@ -120,7 +126,7 @@ class VectorStore:
             logger.error(f"Error adding document {doc_id}: {str(e)}")
             raise
 
-    def search(self, query: str, n_results: int = 5, selected_files: List[str] = None) -> List[Dict[str, Any]]:
+    def search(self, query: str, n_results: int = 5, selected_files: List[str] = None, owner_username: str = None) -> List[Dict[str, Any]]:
         """
         Search for relevant documents
 
@@ -141,11 +147,19 @@ class VectorStore:
                 "query_embeddings": [query_embedding.tolist()],
                 "n_results": n_results
             }
+            
+            where_clauses = {}
+            if owner_username:
+                where_clauses["owner_username"] = owner_username
+                
             if selected_files:
                 if len(selected_files) == 1:
-                    kwargs["where"] = {"filename": selected_files[0]}
+                    where_clauses["filename"] = selected_files[0]
                 else:
-                    kwargs["where"] = {"filename": {"$in": selected_files}}
+                    where_clauses["filename"] = {"$in": selected_files}
+            
+            if where_clauses:
+                kwargs["where"] = where_clauses
 
             with self._lock:
                 # Search in collection
@@ -168,7 +182,7 @@ class VectorStore:
             logger.error(f"Error searching: {str(e)}")
             raise
 
-    def delete_document(self, filename: str):
+    def delete_document(self, filename: str, owner_username: str) -> bool:
         """
         Delete a document from the vector store by filename
 
@@ -177,14 +191,15 @@ class VectorStore:
         """
         try:
             with self._lock:
-                # Find doc_id(s) associated with the filename
+                # Find doc_id(s) associated with the filename AND owner
                 doc_ids_to_remove = []
                 for doc_id, doc_data in self.documents.items():
-                    if doc_data['metadata'].get('filename') == filename:
+                    metadata = doc_data.get('metadata', {})
+                    if metadata.get('filename') == filename and metadata.get('owner_username') == owner_username:
                         doc_ids_to_remove.append(doc_id)
 
                 if not doc_ids_to_remove:
-                    logger.warning(f"No document found with filename {filename}")
+                    logger.warning(f"No document found for user {owner_username} with filename {filename}")
                     return False
 
                 # Delete from ChromaDB
@@ -200,7 +215,7 @@ class VectorStore:
             logger.error(f"Error deleting document {filename}: {str(e)}")
             raise
 
-    def get_relevant_context(self, query: str, n_results: int = DEFAULT_SEARCH_RESULTS, selected_files: List[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+    def get_relevant_context(self, query: str, n_results: int = DEFAULT_SEARCH_RESULTS, selected_files: List[str] = None, owner_username: str = None) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Get relevant context for RAG
 
@@ -212,7 +227,7 @@ class VectorStore:
         Returns:
             Tuple of (context_string, sources_list)
         """
-        results = self.search(query, n_results, selected_files=selected_files)
+        results = self.search(query, n_results, selected_files=selected_files, owner_username=owner_username)
 
         # Combine documents into context
         context_parts = []
@@ -230,15 +245,18 @@ class VectorStore:
         context = "\n\n".join(context_parts)
         return context, sources
 
-    def list_documents(self) -> List[Dict[str, str]]:
+    def list_documents(self, owner_username: str) -> List[Dict[str, str]]:
         """List unique documents and their tags."""
         with self._lock:
             unique_docs = {}
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
                 filename = metadata.get("filename")
-                if not filename:
+                current_owner = metadata.get("owner_username")
+                
+                if not filename or current_owner != owner_username:
                     continue
+                    
                 if filename not in unique_docs:
                     unique_docs[filename] = {
                         "filename": filename,
@@ -246,14 +264,14 @@ class VectorStore:
                     }
             return list(unique_docs.values())
 
-    def get_document_paths(self, filename: str) -> List[str]:
+    def get_document_paths(self, filename: str, owner_username: str) -> List[str]:
         """Return all stored file paths linked to a logical filename."""
         with self._lock:
             seen_paths = set()
             paths: List[str] = []
             for doc_data in self.documents.values():
                 metadata = doc_data.get("metadata", {})
-                if metadata.get("filename") != filename:
+                if metadata.get("filename") != filename or metadata.get('owner_username') != owner_username:
                     continue
                 path = metadata.get("path")
                 if path and path not in seen_paths:
