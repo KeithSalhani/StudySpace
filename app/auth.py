@@ -8,10 +8,9 @@ from typing import Optional
 
 from fastapi import HTTPException, Request, status
 
+from app.config import SESSION_COOKIE_NAME, SESSION_TTL_DAYS
 from app.db.metadata import JSONDatabase
 
-SESSION_COOKIE_NAME = "studyspace_session"
-SESSION_TTL_DAYS = 7
 PBKDF2_ITERATIONS = 310000
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,32}$")
 
@@ -96,6 +95,10 @@ def get_current_user(request: Request) -> AuthenticatedUser:
     try:
         expires_at = datetime.fromisoformat(session["expires_at"])
     except (KeyError, TypeError, ValueError):
+        db.delete_session(session_id)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    if expires_at.tzinfo is None or expires_at.tzinfo.utcoffset(expires_at) is None:
         db.delete_session(session_id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 

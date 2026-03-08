@@ -33,6 +33,7 @@ from app.auth import (
 from app.config import (
     GEMINI_API_KEY,
     PROCESSED_DIR,
+    SESSION_COOKIE_SECURE,
     STATIC_DIR,
     TEMPLATES_DIR,
     UPLOAD_DIR,
@@ -90,13 +91,13 @@ def _user_processed_dir(username: str) -> Path:
     return path
 
 
-def _set_session_cookie(request: Request, response: Response, token: str, expires_at: datetime) -> None:
+def _set_session_cookie(response: Response, token: str, expires_at: datetime) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=SESSION_COOKIE_SECURE,
         expires=int(expires_at.timestamp()),
         path="/",
     )
@@ -514,7 +515,7 @@ async def auth_signup(request: Request, response: Response, payload: AuthRequest
     _user_processed_dir(username)
 
     session_value, expires_at = create_session_for_user(db, username)
-    _set_session_cookie(request, response, session_value, expires_at)
+    _set_session_cookie(response, session_value, expires_at)
     return SessionResponse(user=user)
 
 
@@ -536,7 +537,7 @@ async def auth_signin(request: Request, response: Response, payload: AuthRequest
 
     user = db.get_user(username)
     session_value, expires_at = create_session_for_user(db, username)
-    _set_session_cookie(request, response, session_value, expires_at)
+    _set_session_cookie(response, session_value, expires_at)
     return SessionResponse(user=user)
 
 
