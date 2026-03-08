@@ -936,18 +936,6 @@ export default function App() {
       <div className="orb orb-two" />
       <div className="orb orb-three" />
 
-      {isMobile && (leftSidebarOpen || rightSidebarOpen) ? (
-        <button
-          className="drawer-overlay"
-          type="button"
-          aria-label="Close sidebar"
-          onClick={() => {
-            setLeftSidebarOpen(false);
-            setRightSidebarOpen(false);
-          }}
-        />
-      ) : null}
-
       <div className="app-topbar">
         <div className="topbar-brand">
           <div className="brand-mark" style={{ background: 'transparent', color: 'var(--accent)', padding: 0, width: 'auto', height: 'auto', display: 'flex', alignItems: 'center' }}>
@@ -981,6 +969,18 @@ export default function App() {
       </div>
 
       <div className="app-frame" style={frameStyle}>
+        {isMobile && (leftSidebarOpen || rightSidebarOpen) ? (
+          <button
+            className="drawer-overlay"
+            type="button"
+            aria-label="Close sidebar"
+            onClick={() => {
+              setLeftSidebarOpen(false);
+              setRightSidebarOpen(false);
+            }}
+          />
+        ) : null}
+
         <aside
           className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"} ${isMobile ? "mobile" : ""
             }`}

@@ -1209,7 +1209,7 @@ body.dark-mode .message.bot {
 }
 
 .drawer-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 10;
   border: none;
