@@ -45,3 +45,18 @@ def test_chat_endpoint_without_selected_files(mock_rag_chat):
     
     # Verify the endpoint defaults to None or doesn't pass it
     mock_rag_chat.chat.assert_called_once_with("Hello", None)
+
+@patch("app.main.rag_chat")
+def test_homepage_smoke_test(mock_rag_chat):
+    """Tests the root endpoint '/' to ensure basic API routing is up, 
+    even if frontend assets are missing."""
+    
+    # We don't expect rag_chat to be called for a simple homepage check
+    response = client.get("/")
+    
+    # Expecting 200 OK for the API endpoint, or perhaps a redirect if it's configured that way.
+    # Since it's a *smoke test* for the API, we assume a successful response code.
+    assert response.status_code in [200, 307, 302] # 200 OK, or Redirect if it redirects to docs/index.html
+    
+    # Ensure rag_chat was not invoked by this simple GET request
+    mock_rag_chat.chat.assert_not_called()
