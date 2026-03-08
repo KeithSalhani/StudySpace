@@ -3,11 +3,15 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
+frontend/node_modules/
+app/static/dist/
 
 # Data directories
 uploads/
 chroma_db/
 *.db
+processed/
+conductor/
 
 # Logs
 *.log
@@ -32,3 +36,10 @@ report.7z
 
 processedconductor/
 app/processed/
+frontend/node_modules/
+
+# Local artifacts
+screenshot.png
+gemini.md
+pr.md
+pw.md
