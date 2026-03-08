@@ -2,7 +2,7 @@
 RAG Chat Application for Student Study Hub
 """
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Query, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
