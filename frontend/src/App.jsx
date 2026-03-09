@@ -361,6 +361,7 @@ export default function App() {
   const [viewport, setViewport] = useState(getViewportState);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() => !getViewportState().isMobile);
+  const [mobileTab, setMobileTab] = useState("chat");
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -435,6 +436,7 @@ export default function App() {
         if (nextViewport.isMobile) {
           setLeftSidebarOpen(false);
           setRightSidebarOpen(false);
+          setMobileTab("chat");
         } else {
           setLeftSidebarOpen(true);
           setRightSidebarOpen(true);
@@ -900,6 +902,288 @@ export default function App() {
         rightSidebarOpen ? "minmax(280px, 320px)" : "86px"
       ].join(" ")
     };
+  const mobileTabTitle =
+    mobileTab === "sources" ? "Sources" : mobileTab === "studio" ? "Studio" : "Chat";
+
+  function renderWorkspaceSections() {
+    return (
+      <div className="sidebar-stack">
+        <section className="section">
+          <div className="section-head">
+            <div className="section-title">Upload</div>
+          </div>
+          <div
+            className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setIsDragOver(false);
+              void handleUpload(event.dataTransfer.files);
+            }}
+          >
+            <strong>Drop files or tap to upload</strong>
+            <input
+              ref={fileInputRef}
+              hidden
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              multiple
+              onChange={async (event) => {
+                await handleUpload(event.currentTarget.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <div className="section-title">Pipeline</div>
+            <div className="helper-text">{visibleUploadJobs.length} live</div>
+          </div>
+          <div className="stack">
+            {visibleUploadJobs.length ? (
+              visibleUploadJobs.map((job) => (
+                <div key={job.job_id} className={`upload-job status-${job.status}`}>
+                  <div className="upload-job-head">
+                    <div className="upload-job-file" title={job.filename}>
+                      {job.filename}
+                    </div>
+                    <div className="upload-job-status">{job.status}</div>
+                  </div>
+                  <div className="meta-text">{job.stage}</div>
+                  <div className="progress-track">
+                    <div
+                      className="progress-bar"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, job.progress || 0))}%`
+                      }}
+                    />
+                  </div>
+                  <div className="upload-job-meta">
+                    {[
+                      job.queue_position ? `Queue #${job.queue_position}` : null,
+                      job.predicted_tag ? `Tag: ${job.predicted_tag}` : null,
+                      typeof job.processing_time_seconds === "number"
+                        ? `${job.processing_time_seconds.toFixed(2)}s`
+                        : null,
+                      job.error ? `Error: ${job.error}` : null
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="empty-card">Nothing processing right now.</div>
+            )}
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <div className="section-title">Documents</div>
+            <div className="helper-text">{documents.length} indexed</div>
+          </div>
+          <div className="stack">
+            {documents.length ? (
+              documents.map((doc) => (
+                <div key={doc.filename} className="document-item">
+                  <label className="document-select">
+                    <input
+                      type="checkbox"
+                      checked={selectedFiles.has(doc.filename)}
+                      onChange={() =>
+                        setSelectedFiles((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(doc.filename)) {
+                            next.delete(doc.filename);
+                          } else {
+                            next.add(doc.filename);
+                          }
+                          return next;
+                        })
+                      }
+                    />
+                    <div className="document-meta">
+                      <div className="document-name" title={doc.filename}>
+                        {doc.filename}
+                      </div>
+                      <div className="document-line">
+                        {doc.tag ? <span className="pill">{doc.tag}</span> : null}
+                        {selectedFiles.has(doc.filename) ? (
+                          <span className="micro-pill active">Live</span>
+                        ) : (
+                          <span className="micro-pill">Muted</span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title="Delete"
+                    onClick={() => void handleDeleteDocument(doc.filename)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="empty-card">No documents yet. Start by dropping a file.</div>
+            )}
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <div className="section-title">Topics</div>
+          </div>
+          <div className="tags-wrap">
+            {tags.length ? (
+              tags.map((tag) => (
+                <div key={tag} className="tag-chip">
+                  <span>{tag}</span>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${tag}`}
+                    onClick={() => void handleDeleteTag(tag)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="empty-card compact">No topics yet.</div>
+            )}
+          </div>
+          <div className="input-row">
+            <input
+              className="input"
+              value={tagDraft}
+              placeholder="Add a topic lens..."
+              onChange={(event) => setTagDraft(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleAddTag();
+                }
+              }}
+            />
+            <button
+              className="small-button primary"
+              type="button"
+              onClick={() => void handleAddTag()}
+            >
+              Add
+            </button>
+          </div>
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <div className="section-title">Notes</div>
+            <div className="helper-text">{notes.length} saved</div>
+          </div>
+          <div className="notes-list">
+            {notes.length ? (
+              notes.map((note) => (
+                <div key={note.id} className="note-card">
+                  <div className="note-content">{note.content}</div>
+                  <div className="note-footer">
+                    <div className="note-date">{formatDate(note.created_at)}</div>
+                    <button
+                      className="note-delete"
+                      type="button"
+                      onClick={() => void handleDeleteNote(note.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="empty-card">No notes yet. Capture the good bits here.</div>
+            )}
+          </div>
+          <div className="stack">
+            <textarea
+              className="textarea"
+              placeholder="Drop a quick takeaway, quote, or reminder..."
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.currentTarget.value)}
+            />
+            <button
+              className="small-button primary"
+              type="button"
+              onClick={() => void handleAddNote()}
+            >
+              Save note
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderStudioSections() {
+    return (
+      <div className="studio-stack">
+        <section className="section">
+          <div className="section-title">Source document</div>
+          <select
+            className="select"
+            value={selectedDocument}
+            onChange={(event) => setSelectedDocument(event.currentTarget.value)}
+          >
+            <option value="">Select a document...</option>
+            {documents.map((doc) => (
+              <option key={doc.filename} value={doc.filename}>
+                {doc.filename}
+              </option>
+            ))}
+          </select>
+        </section>
+
+        <section className="section">
+          <div className="section-title">Tools</div>
+          <button className="studio-card audio-card" type="button" disabled>
+            <div className="studio-card-icon">🎧</div>
+            <div>
+              <div className="studio-card-title">Audio recap</div>
+            </div>
+          </button>
+          <button
+            className="studio-card quiz-card"
+            type="button"
+            disabled={!hasStudioSelection}
+            onClick={() => void handleGenerateQuiz()}
+          >
+            <div className="studio-card-icon">📝</div>
+            <div>
+              <div className="studio-card-title">Quiz me</div>
+            </div>
+          </button>
+          <button
+            className="studio-card flashcard-card"
+            type="button"
+            disabled={!hasStudioSelection}
+            onClick={() => void handleGenerateFlashcards()}
+          >
+            <div className="studio-card-icon">🗂</div>
+            <div>
+              <div className="studio-card-title">Flashcards</div>
+            </div>
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   if (authStatus === "loading") {
     return (
@@ -948,17 +1232,22 @@ export default function App() {
           </div>
           <div className="topbar-copy">
             <span className="eyebrow" style={{ fontSize: '1.15rem', fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--text)' }}>Study Space</span>
+            {isMobile ? <span className="topbar-mobile-context">{mobileTabTitle}</span> : null}
           </div>
         </div>
         <div className="topbar-actions">
-          <div className="status-chip docs-chip pulse">
-            {documentStatusLabel}
-          </div>
-          <div className="status-chip user-chip">
-            @{currentUser?.username}
-          </div>
+          {isMobile ? null : (
+            <>
+              <div className="status-chip docs-chip pulse">
+                {documentStatusLabel}
+              </div>
+              <div className="status-chip user-chip">
+                @{currentUser?.username}
+              </div>
+            </>
+          )}
           <button className="small-button" type="button" onClick={() => void handleLogout()}>
-            Log out
+            {isMobile ? "Exit" : "Log out"}
           </button>
           <button
             className="theme-toggle"
@@ -972,296 +1261,144 @@ export default function App() {
       </div>
 
       <div className="app-frame" style={frameStyle}>
-        {isMobile && (leftSidebarOpen || rightSidebarOpen) ? (
-          <button
-            className="drawer-overlay"
-            type="button"
-            aria-label="Close sidebar"
-            onClick={() => {
-              setLeftSidebarOpen(false);
-              setRightSidebarOpen(false);
-            }}
-          />
-        ) : null}
-
-        <aside
-          className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"} ${isMobile ? "mobile" : ""
-            }`}
-        >
-          <div className="panel glass-panel">
-            <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: leftSidebarOpen ? 'space-between' : 'center' }}>
-              {leftSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Workspace</div>}
-              <SidebarToggle
-                side="left"
-                open={leftSidebarOpen}
-                mobile={isMobile}
-                onClick={() => setLeftSidebarOpen((prev) => !prev)}
-              />
-            </div>
-
-            <div className="side-rail">
-              <button
-                className="rail-badge"
-                type="button"
-                onClick={() => setLeftSidebarOpen((prev) => !prev)}
-              >
-                📚
-              </button>
-              <div className="rail-count">{documents.length}</div>
-              <div className="rail-mini-label">Docs</div>
-            </div>
-
-            <div className="panel-body left-body">
-              <div className="sidebar-stack">
-
-                <section className="section">
-                  <div className="section-head">
-                    <div className="section-title">Upload</div>
+        {isMobile ? (
+          <main
+            className={`panel glass-panel mobile-main-shell mobile-tab-${mobileTab} ${mobileTab === "chat" ? "mobile-chat-shell" : "mobile-panel-screen"}`}
+          >
+            {mobileTab === "sources" ? (
+              <>
+                <div className="panel-header mobile-panel-header">
+                  <div className="panel-heading">
+                    <div className="panel-title">Sources</div>
+                    <div className="header-subtitle">
+                      Upload material, scope documents, and capture notes.
+                    </div>
                   </div>
-                  <div
-                    className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setIsDragOver(true);
-                    }}
-                    onDragLeave={() => setIsDragOver(false)}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      setIsDragOver(false);
-                      void handleUpload(event.dataTransfer.files);
-                    }}
+                </div>
+                <div className="panel-body left-body mobile-panel-body">
+                  {renderWorkspaceSections()}
+                </div>
+              </>
+            ) : null}
+
+            {mobileTab === "chat" ? (
+              <>
+                <div className="chat-body" ref={chatBodyRef}>
+                  {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
+                  {chatMessages.map((message) => (
+                    <article key={message.id} className={`message ${message.type}`}>
+                      <div className="message-sender">
+                        {message.type === "user" ? "You" : "Study Space"}
+                      </div>
+                      <div className="message-body">{message.content}</div>
+                      {message.sources?.length ? (
+                        <div className="sources">
+                          <div className="source-list-label">Pulled from</div>
+                          <div className="source-pills">
+                            {message.sources.map((source, index) => (
+                              <span
+                                key={`${message.id}-${source.filename || source.source || index}`}
+                                className="source-pill"
+                              >
+                                {source.filename || source.source || "Unknown source"}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+
+                <div className="chat-footer mobile-chat-footer">
+                  {isSending ? <div className="loading-text">Thinking through your material...</div> : null}
+                  <div className="composer-shell">
+                    <div className="composer">
+                      <textarea
+                        className="textarea composer-input"
+                        rows="1"
+                        placeholder="Ask for a summary, breakdown, challenge question, or study guide..."
+                        value={chatInput}
+                        onChange={(event) => {
+                          setChatInput(event.currentTarget.value);
+                          autoResize(event.currentTarget);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            void handleSendMessage();
+                          }
+                        }}
+                      />
+                      <button
+                        className="send-button"
+                        type="button"
+                        onClick={() => void handleSendMessage()}
+                        disabled={isSending}
+                      >
+                        ➜
+                      </button>
+                    </div>
+                    <div className={`composer-meta ${isMobile ? "mobile-hidden" : ""}`}>
+                      <span>Enter to send</span>
+                      <span>Shift + Enter for a new line</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {mobileTab === "studio" ? (
+              <>
+                <div className="panel-header mobile-panel-header">
+                  <div className="panel-heading">
+                    <div className="panel-title">Studio</div>
+                    <div className="header-subtitle">
+                      Pick a source and launch active study tools.
+                    </div>
+                  </div>
+                </div>
+                <div className="panel-body right-body mobile-panel-body">
+                  {renderStudioSections()}
+                </div>
+              </>
+            ) : null}
+          </main>
+        ) : (
+          <>
+            <aside
+              className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"}`}
+            >
+              <div className="panel glass-panel">
+                <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: leftSidebarOpen ? 'space-between' : 'center' }}>
+                  {leftSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Workspace</div>}
+                  <SidebarToggle
+                    side="left"
+                    open={leftSidebarOpen}
+                    onClick={() => setLeftSidebarOpen((prev) => !prev)}
+                  />
+                </div>
+
+                <div className="side-rail">
+                  <button
+                    className="rail-badge"
+                    type="button"
+                    onClick={() => setLeftSidebarOpen((prev) => !prev)}
                   >
-                    <strong>Drop files or tap to upload</strong>
-                    <input
-                      ref={fileInputRef}
-                      hidden
-                      type="file"
-                      accept=".pdf,.docx,.txt,.md"
-                      multiple
-                      onChange={async (event) => {
-                        await handleUpload(event.currentTarget.files);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                  </div>
-                </section>
+                    📚
+                  </button>
+                  <div className="rail-count">{documents.length}</div>
+                  <div className="rail-mini-label">Docs</div>
+                </div>
 
-                <section className="section">
-                  <div className="section-head">
-                    <div className="section-title">Pipeline</div>
-                    <div className="helper-text">{visibleUploadJobs.length} live</div>
-                  </div>
-                  <div className="stack">
-                    {visibleUploadJobs.length ? (
-                      visibleUploadJobs.map((job) => (
-                        <div key={job.job_id} className={`upload-job status-${job.status}`}>
-                          <div className="upload-job-head">
-                            <div className="upload-job-file" title={job.filename}>
-                              {job.filename}
-                            </div>
-                            <div className="upload-job-status">{job.status}</div>
-                          </div>
-                          <div className="meta-text">{job.stage}</div>
-                          <div className="progress-track">
-                            <div
-                              className="progress-bar"
-                              style={{
-                                width: `${Math.max(0, Math.min(100, job.progress || 0))}%`
-                              }}
-                            />
-                          </div>
-                          <div className="upload-job-meta">
-                            {[
-                              job.queue_position ? `Queue #${job.queue_position}` : null,
-                              job.predicted_tag ? `Tag: ${job.predicted_tag}` : null,
-                              typeof job.processing_time_seconds === "number"
-                                ? `${job.processing_time_seconds.toFixed(2)}s`
-                                : null,
-                              job.error ? `Error: ${job.error}` : null
-                            ]
-                              .filter(Boolean)
-                              .join(" • ")}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="empty-card">Nothing processing right now.</div>
-                    )}
-                  </div>
-                </section>
-
-                <section className="section">
-                  <div className="section-head">
-                    <div className="section-title">Documents</div>
-                    <div className="helper-text">{documents.length} indexed</div>
-                  </div>
-                  <div className="stack">
-                    {documents.length ? (
-                      documents.map((doc) => (
-                        <div key={doc.filename} className="document-item">
-                          <label className="document-select">
-                            <input
-                              type="checkbox"
-                              checked={selectedFiles.has(doc.filename)}
-                              onChange={() =>
-                                setSelectedFiles((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(doc.filename)) {
-                                    next.delete(doc.filename);
-                                  } else {
-                                    next.add(doc.filename);
-                                  }
-                                  return next;
-                                })
-                              }
-                            />
-                            <div className="document-meta">
-                              <div className="document-name" title={doc.filename}>
-                                {doc.filename}
-                              </div>
-                              <div className="document-line">
-                                {doc.tag ? <span className="pill">{doc.tag}</span> : null}
-                                {selectedFiles.has(doc.filename) ? (
-                                  <span className="micro-pill active">Live</span>
-                                ) : (
-                                  <span className="micro-pill">Muted</span>
-                                )}
-                              </div>
-                            </div>
-                          </label>
-                          <button
-                            className="icon-button"
-                            type="button"
-                            title="Delete"
-                            onClick={() => void handleDeleteDocument(doc.filename)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="empty-card">No documents yet. Start by dropping a file.</div>
-                    )}
-                  </div>
-                </section>
-
-                <section className="section">
-                  <div className="section-head">
-                    <div className="section-title">Topics</div>
-                  </div>
-                  <div className="tags-wrap">
-                    {tags.length ? (
-                      tags.map((tag) => (
-                        <div key={tag} className="tag-chip">
-                          <span>{tag}</span>
-                          <button
-                            type="button"
-                            aria-label={`Delete ${tag}`}
-                            onClick={() => void handleDeleteTag(tag)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="empty-card compact">No topics yet.</div>
-                    )}
-                  </div>
-                  <div className="input-row">
-                    <input
-                      className="input"
-                      value={tagDraft}
-                      placeholder="Add a topic lens..."
-                      onChange={(event) => setTagDraft(event.currentTarget.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void handleAddTag();
-                        }
-                      }}
-                    />
-                    <button
-                      className="small-button primary"
-                      type="button"
-                      onClick={() => void handleAddTag()}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </section>
-
-                <section className="section">
-                  <div className="section-head">
-                    <div className="section-title">Notes</div>
-                    <div className="helper-text">{notes.length} saved</div>
-                  </div>
-                  <div className="notes-list">
-                    {notes.length ? (
-                      notes.map((note) => (
-                        <div key={note.id} className="note-card">
-                          <div className="note-content">{note.content}</div>
-                          <div className="note-footer">
-                            <div className="note-date">{formatDate(note.created_at)}</div>
-                            <button
-                              className="note-delete"
-                              type="button"
-                              onClick={() => void handleDeleteNote(note.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="empty-card">No notes yet. Capture the good bits here.</div>
-                    )}
-                  </div>
-                  <div className="stack">
-                    <textarea
-                      className="textarea"
-                      placeholder="Drop a quick takeaway, quote, or reminder..."
-                      value={noteDraft}
-                      onChange={(event) => setNoteDraft(event.currentTarget.value)}
-                    />
-                    <button
-                      className="small-button primary"
-                      type="button"
-                      onClick={() => void handleAddNote()}
-                    >
-                      Save note
-                    </button>
-                  </div>
-                </section>
+                <div className="panel-body left-body">
+                  {renderWorkspaceSections()}
+                </div>
               </div>
-            </div>
-          </div>
-        </aside>
+            </aside>
 
-        <main className="panel chat-panel glass-panel">
+            <main className="panel chat-panel glass-panel">
           <div className="chat-header">
-            <div className="chat-toolbar mobile-only">
-              <SidebarToggle
-                side="left"
-                open={leftSidebarOpen}
-                mobile
-                label="Sources"
-                onClick={() => {
-                  setLeftSidebarOpen((prev) => !prev);
-                  setRightSidebarOpen(false);
-                }}
-              />
-              <SidebarToggle
-                side="right"
-                open={rightSidebarOpen}
-                mobile
-                label="Studio"
-                onClick={() => {
-                  setRightSidebarOpen((prev) => !prev);
-                  setLeftSidebarOpen(false);
-                }}
-              />
-            </div>
             <div className="chat-header-row">
               <div className="panel-title" style={{ margin: 0 }}>Chat</div>
             </div>
@@ -1350,90 +1487,72 @@ export default function App() {
               </div>
             </div>
           </div>
-        </main>
+            </main>
 
-        <aside
-          className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"} ${isMobile ? "mobile" : ""
-            }`}
-        >
-          <div className="panel glass-panel">
-            <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: rightSidebarOpen ? 'space-between' : 'center' }}>
-              {rightSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Studio</div>}
-              <SidebarToggle
-                side="right"
-                open={rightSidebarOpen}
-                mobile={isMobile}
-                onClick={() => setRightSidebarOpen((prev) => !prev)}
-              />
-            </div>
+            <aside
+              className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"}`}
+            >
+              <div className="panel glass-panel">
+                <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: rightSidebarOpen ? 'space-between' : 'center' }}>
+                  {rightSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Studio</div>}
+                  <SidebarToggle
+                    side="right"
+                    open={rightSidebarOpen}
+                    onClick={() => setRightSidebarOpen((prev) => !prev)}
+                  />
+                </div>
 
-            <div className="side-rail">
-              <button
-                className="rail-badge neon"
-                type="button"
-                onClick={() => setRightSidebarOpen((prev) => !prev)}
-              >
-                ✦
-              </button>
-              <div className="rail-count">{hasStudioSelection ? 1 : 0}</div>
-              <div className="rail-mini-label">Live</div>
-            </div>
-
-            <div className="panel-body right-body">
-              <div className="studio-stack">
-
-                <section className="section">
-                  <div className="section-title">Source document</div>
-                  <select
-                    className="select"
-                    value={selectedDocument}
-                    onChange={(event) => setSelectedDocument(event.currentTarget.value)}
-                  >
-                    <option value="">Select a document...</option>
-                    {documents.map((doc) => (
-                      <option key={doc.filename} value={doc.filename}>
-                        {doc.filename}
-                      </option>
-                    ))}
-                  </select>
-                </section>
-
-                <section className="section">
-                  <div className="section-title">Tools</div>
-                  <button className="studio-card audio-card" type="button" disabled>
-                    <div className="studio-card-icon">🎧</div>
-                    <div>
-                      <div className="studio-card-title">Audio recap</div>
-                    </div>
-                  </button>
+                <div className="side-rail">
                   <button
-                    className="studio-card quiz-card"
+                    className="rail-badge neon"
                     type="button"
-                    disabled={!hasStudioSelection}
-                    onClick={() => void handleGenerateQuiz()}
+                    onClick={() => setRightSidebarOpen((prev) => !prev)}
                   >
-                    <div className="studio-card-icon">📝</div>
-                    <div>
-                      <div className="studio-card-title">Quiz me</div>
-                    </div>
+                    ✦
                   </button>
-                  <button
-                    className="studio-card flashcard-card"
-                    type="button"
-                    disabled={!hasStudioSelection}
-                    onClick={() => void handleGenerateFlashcards()}
-                  >
-                    <div className="studio-card-icon">🗂</div>
-                    <div>
-                      <div className="studio-card-title">Flashcards</div>
-                    </div>
-                  </button>
-                </section>
+                  <div className="rail-count">{hasStudioSelection ? 1 : 0}</div>
+                  <div className="rail-mini-label">Live</div>
+                </div>
+
+                <div className="panel-body right-body">
+                  {renderStudioSections()}
+                </div>
               </div>
-            </div>
-          </div>
-        </aside>
+            </aside>
+          </>
+        )}
       </div>
+
+      {isMobile ? (
+        <div className="mobile-tabbar-wrap">
+          <nav className="mobile-tabbar" aria-label="Mobile workspace">
+            <button
+              className={`mobile-tab ${mobileTab === "sources" ? "active" : ""}`}
+              type="button"
+              onClick={() => setMobileTab("sources")}
+            >
+              <span className="mobile-tab-icon">☰</span>
+              <span>Sources</span>
+            </button>
+            <button
+              className={`mobile-tab ${mobileTab === "chat" ? "active" : ""}`}
+              type="button"
+              onClick={() => setMobileTab("chat")}
+            >
+              <span className="mobile-tab-icon">✦</span>
+              <span>Chat</span>
+            </button>
+            <button
+              className={`mobile-tab ${mobileTab === "studio" ? "active" : ""}`}
+              type="button"
+              onClick={() => setMobileTab("studio")}
+            >
+              <span className="mobile-tab-icon">◌</span>
+              <span>Studio</span>
+            </button>
+          </nav>
+        </div>
+      ) : null}
 
       {flashcardState.open ? (
         <FlashcardModal
