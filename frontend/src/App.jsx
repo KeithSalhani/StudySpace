@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   createNote,
   createTag,
@@ -73,6 +75,39 @@ function getViewportState() {
 
 function isUnauthorizedError(error) {
   return error?.status === 401;
+}
+
+function dedupeSources(sources = []) {
+  const seen = new Set();
+
+  return sources.filter((source) => {
+    const label = (source?.filename || source?.source || "Unknown source").trim();
+    const key = label.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function MessageContent({ message }) {
+  if (message.type === "user") {
+    return <div className="message-body">{message.content}</div>;
+  }
+
+  return (
+    <div className="message-body message-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />
+        }}
+      >
+        {message.content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function AuthScreen({
@@ -732,7 +767,7 @@ export default function App() {
           id: crypto.randomUUID(),
           type: "bot",
           content: payload.response,
-          sources: payload.sources || []
+          sources: dedupeSources(payload.sources)
         }
       ]);
     } catch (error) {
@@ -1290,12 +1325,12 @@ export default function App() {
                       <div className="message-sender">
                         {message.type === "user" ? "You" : "Study Space"}
                       </div>
-                      <div className="message-body">{message.content}</div>
-                      {message.sources?.length ? (
+                      <MessageContent message={message} />
+                      {dedupeSources(message.sources).length ? (
                         <div className="sources">
                           <div className="source-list-label">Pulled from</div>
                           <div className="source-pills">
-                            {message.sources.map((source, index) => (
+                            {dedupeSources(message.sources).map((source, index) => (
                               <span
                                 key={`${message.id}-${source.filename || source.source || index}`}
                                 className="source-pill"
@@ -1432,12 +1467,12 @@ export default function App() {
                 <div className="message-sender">
                   {message.type === "user" ? "You" : "Study Space"}
                 </div>
-                <div className="message-body">{message.content}</div>
-                {message.sources?.length ? (
+                <MessageContent message={message} />
+                {dedupeSources(message.sources).length ? (
                   <div className="sources">
                     <div className="source-list-label">Pulled from</div>
                     <div className="source-pills">
-                      {message.sources.map((source, index) => (
+                      {dedupeSources(message.sources).map((source, index) => (
                         <span
                           key={`${message.id}-${source.filename || source.source || index}`}
                           className="source-pill"
