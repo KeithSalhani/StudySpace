@@ -4,161 +4,195 @@ Study Space is a FastAPI + React study assistant for document-grounded chat, qui
 
 ## What It Does
 
-- Upload PDF, DOCX, TXT, and Markdown study documents
-- Process and classify uploaded documents into topic tags
-- Ask questions against your own indexed material with RAG
-- Generate quizzes and flashcards from a selected document
-- Save personal notes and manage personal tags
-- Keep each user’s documents, notes, sessions, and retrieval results isolated
+- **Document Ingestion**: Upload PDF, DOCX, TXT, and Markdown study documents.
+- **Automated Processing**: Extract text, chunk documents, and classify uploaded documents into topic tags.
+- **RAG Chat**: Ask questions against your own indexed material using Retrieval-Augmented Generation (RAG).
+- **Study Aids**: Generate quizzes and flashcards directly from a selected document.
+- **Personal Workspace**: Save personal notes and manage custom topic tags.
+- **Data Privacy**: Keep each user’s documents, notes, sessions, and retrieval results fully isolated.
 
-## Stack
+## Why It Exists
 
-- Frontend: React + Vite
-- Backend: FastAPI
-- Vector search: ChromaDB
-- Embeddings: `all-MiniLM-L6-v2`
-- LLM features: Google Gemini via `google-genai`
-- Metadata store: local JSON file
+Study Space was built to provide students and lifelong learners with a private, intelligent workspace. By combining traditional study tools (notes, flashcards, tags) with advanced AI capabilities (document summarization, RAG-based Q&A, automatic quiz generation), it aims to streamline the learning process while ensuring that users' study materials remain segregated and private.
 
-## Authentication And Isolation
+## Architecture and Internal Workings
 
-### Login model
+The project is built on a modern, decoupled architecture:
 
-- Accounts are stored in `db.json` through `app/db/metadata.py`.
-- Passwords are stored as PBKDF2 hashes with per-user salts. The hashing and session helpers live in `app/auth.py`.
-- Successful sign-in/sign-up issues an `HttpOnly` session cookie named `studyspace_session`.
-- Sessions are validated server-side on every protected request.
+- **Frontend**: React application built with Vite (`frontend/`).
+- **Backend**: FastAPI serving REST endpoints and managing background tasks (`app/`).
+- **Storage & State**:
+  - **Vector Store**: ChromaDB is used for storing document embeddings and performing similarity searches for RAG. While physically shared, it is logically segregated; every stored chunk includes an `owner_username` metadata field, and all queries are filtered by this field.
+  - **Metadata & User Data**: A local JSON file (`db.json`) acts as the database for user accounts, sessions, notes, and tags.
+  - **File Storage**: Uploaded source files and processed Markdown files are stored locally under user-specific directories (`app/users/<username>/`).
+- **AI Integration**:
+  - **Embeddings**: `all-MiniLM-L6-v2` via `sentence-transformers` for creating vector representations of document chunks.
+  - **LLM Features**: Google's Gemini (`gemini-3.1-flash-lite-preview`) is integrated using the `google-genai` SDK to power the chat, quiz generation, and flashcard generation features.
+  - **Classification**: Zero-shot classification is used during document ingestion to automatically assign tags to uploaded content.
 
-### How user data is separated
+### Execution Flow (Document Upload)
 
-- Notes and tags are stored per user in `db.json`.
-- Uploaded source files are stored under `app/users/<username>/uploads/`.
-- Processed Markdown files are stored under `app/users/<username>/processed/`.
-- Upload job history is kept in memory but filtered per authenticated user before being returned.
-- ChromaDB is currently shared physically but segregated logically:
-  - one persistent Chroma database directory
-  - one shared collection
-  - every stored chunk includes `owner_username`
-  - every search, list, metadata lookup, and delete path filters on `owner_username`
+1. A user uploads a document via the frontend.
+2. The FastAPI backend receives the file and saves it to the user's `uploads` directory.
+3. An `UploadJob` is enqueued and processed by a background worker thread (`app/main.py`).
+4. The background worker uses `DocumentProcessor` to extract text from the file (converting it to Markdown).
+5. The extracted text is classified to predict a relevant tag.
+6. The text is chunked, embedded, and stored in ChromaDB by the `VectorStore`.
+7. The processed Markdown is saved in the user's `processed` directory.
 
-That means users do not get a separate Chroma database right now. Isolation is enforced through ownership metadata and mandatory filters in the vector-store layer.
-
-## Storage Layout
-
-Current generated storage paths:
-
-```text
-app/chroma_db/              Shared Chroma persistence
-app/users/<username>/uploads/
-app/users/<username>/processed/
-db.json                     User accounts, sessions, notes, tags
-```
-
-Legacy root-level generated directories such as `uploads/`, `processed/`, and `chroma_db/` are obsolete and should not be used.
-
-## Project Structure
+## Repository Structure
 
 ```text
 .
-├── app/
-│   ├── auth.py
-│   ├── config.py
-│   ├── main.py
-│   ├── core/
-│   │   ├── classification.py
-│   │   ├── flashcard_generator.py
-│   │   ├── ingestion.py
-│   │   ├── quiz_generator.py
-│   │   └── rag.py
-│   ├── db/
-│   │   ├── metadata.py
-│   │   └── vector_store.py
-│   ├── static/
-│   ├── templates/
-│   └── users/
-├── frontend/
-├── tests/
-├── requirements.txt
-└── README.md
+├── app/                        # FastAPI Backend
+│   ├── api/                    # (Future API route modules)
+│   ├── core/                   # Core business logic
+│   │   ├── classification.py   # Zero-shot classification
+│   │   ├── flashcard_generator.py # LLM-based flashcard generation
+│   │   ├── ingestion.py        # Document text extraction (MarkItDown)
+│   │   ├── quiz_generator.py   # LLM-based quiz generation
+│   │   └── rag.py              # RAG Chat logic integrating Gemini
+│   ├── db/                     # Data access layer
+│   │   ├── metadata.py         # JSON-based storage for users, notes, tags
+│   │   └── vector_store.py     # ChromaDB wrapper
+│   ├── static/                 # Static assets (including built frontend)
+│   ├── templates/              # Jinja2 templates (index.html)
+│   ├── users/                  # User data storage (uploads & processed files)
+│   ├── auth.py                 # Authentication, password hashing, sessions
+│   ├── config.py               # Environment configuration
+│   └── main.py                 # FastAPI application entry point & routes
+├── frontend/                   # React Frontend
+│   ├── src/                    # React components and logic
+│   ├── package.json            # Node.js dependencies
+│   └── vite.config.js          # Vite build configuration
+├── tests/                      # Pytest suite
+├── requirements.txt            # Python backend dependencies
+├── README.md                   # This file
+└── README_TESTS.md             # Testing documentation
 ```
 
-## Setup
+## Setup & Development
 
 ### Prerequisites
 
-- Python 3.12 recommended
-- Node.js for the frontend build
-- A valid `GEMINI_API_KEY`
+- Python 3.12+ recommended
+- Node.js (for the frontend build)
+- A valid Google Gemini API Key (`GEMINI_API_KEY`)
 
-### Install
+### Backend Setup
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cd frontend
-npm install
-npm run build
-cd ..
-```
+1. **Create and activate a virtual environment:**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-### Configure
+2. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-Set the Gemini key in your environment or `.env`:
+3. **Configure Environment Variables:**
+   Set the required API key in your environment or a `.env` file in the root directory:
+   ```bash
+   export GEMINI_API_KEY="your_gemini_api_key_here"
+   ```
+   *Optional Configuration:*
+   ```bash
+   export SESSION_TTL_DAYS=7
+   export SESSION_COOKIE_SECURE=false
+   ```
 
-```bash
-export GEMINI_API_KEY="your_key_here"
-```
+### Frontend Setup
 
-Optional auth-related env vars:
+1. **Navigate to the frontend directory:**
+   ```bash
+   cd frontend
+   ```
 
-```bash
-SESSION_TTL_DAYS=7
-SESSION_COOKIE_SECURE=false
-```
+2. **Install Node dependencies:**
+   ```bash
+   npm install
+   ```
 
-## Run
+3. **Build the frontend:**
+   The backend expects the compiled frontend to be in the `app/static/dist` folder.
+   ```bash
+   npm run build
+   ```
+
+### Running the Application
+
+From the root directory, start the FastAPI server with live reloading:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`, create an account, then upload documents and use the workspace.
+The application will be available at `http://127.0.0.1:8000`. You can create an account, log in, and begin uploading documents.
 
-## Main API Routes
+### Deployment
 
-Auth:
+For production deployment, you should:
+1. Run Uvicorn without the `--reload` flag.
+2. Consider running Uvicorn behind a reverse proxy like Nginx or using Gunicorn with Uvicorn workers.
+3. Ensure `SESSION_COOKIE_SECURE` is set to `true` if serving over HTTPS.
+4. Use a more robust, persistent storage solution for `db.json` if scaling horizontally (though local JSON works for single-instance deployments).
 
-- `POST /auth/signup`
-- `POST /auth/signin`
-- `POST /auth/logout`
-- `GET /auth/me`
+## Testing
 
-Workspace:
+The project uses `pytest` for backend unit and integration tests. See `README_TESTS.md` for full details.
 
-- `POST /upload`
-- `GET /upload-jobs`
-- `GET /upload-jobs/{job_id}`
-- `POST /chat`
-- `GET /documents`
-- `DELETE /documents/{filename}`
-- `GET/POST/DELETE /tags`
-- `GET/POST/DELETE /notes`
-- `POST /quiz/generate`
-- `POST /flashcards/generate`
-
-All workspace routes require an authenticated session.
-
-## Verification
-
-Useful commands:
+To run the test suite, ensure your virtual environment is active and run:
 
 ```bash
-./venv/bin/python -m pytest tests/test_db.py tests/test_vector_store.py tests/test_api.py
-cd frontend && npm run build
+pip install pytest
+python -m pytest tests/
 ```
 
-## Notes
+*Note: The frontend currently relies on Vite's build process; specific frontend unit tests can be added in the `frontend/` directory.*
 
-- Chroma isolation is currently logical, not physical. If you want stronger tenant isolation, the next step is per-user collections or per-user Chroma directories.
-- The repo still has some compatibility constants for old shared upload/processed paths, but active document storage is user-scoped under `app/users/`.
+## Main API Endpoints
+
+The FastAPI backend exposes the following key REST endpoints. Most endpoints require a valid session cookie obtained via login.
+
+### Authentication
+- `POST /auth/signup`: Create a new user account.
+- `POST /auth/signin`: Authenticate and receive an `HttpOnly` session cookie.
+- `POST /auth/logout`: Invalidate the current session.
+- `GET /auth/me`: Retrieve current user details.
+
+### Workspace (Requires Authentication)
+- `POST /upload`: Upload a document (enqueues a background job).
+- `GET /upload-jobs`: List recent upload processing jobs.
+- `GET /upload-jobs/{job_id}`: Check the status of a specific job.
+- `GET /documents`: List all processed documents belonging to the user.
+- `DELETE /documents/{filename}`: Delete a document and its embeddings.
+- `POST /chat`: Submit a message to the RAG system (optionally filtering by `selected_files`).
+- `GET / POST / DELETE /tags`: Manage custom user tags.
+- `GET / POST / DELETE /notes`: Manage user notes.
+- `POST /quiz/generate`: Generate a quiz from a specific document.
+- `POST /flashcards/generate`: Generate flashcards from a specific document.
+
+## Operational Details
+
+### Data Isolation
+All user data is strictly isolated. `db.json` separates notes and tags by username. Files are stored in `app/users/<username>/`. ChromaDB uses a single shared collection, but all queries, inserts, and deletions enforce a metadata filter: `{"owner_username": "<username>"}`.
+
+### Logging and Error Handling
+The backend uses Python's standard `logging` module. Logs are currently output to standard out (console) and detail server startup, background worker progress (e.g., "Extracting text", "Indexing in vector database"), and error stack traces.
+If an upload job fails during background processing, its status is updated to `Failed`, the error message is stored in the job history, and temporary files are cleaned up where possible.
+
+### Security
+- **Passwords**: Hashed using PBKDF2 with per-user salts (`app/auth.py`).
+- **Sessions**: Managed via secure, `HttpOnly` cookies.
+- **API Keys**: External API keys (like Gemini) are managed via environment variables and are never exposed to the frontend.
+
+## Contributor Guidance
+
+Contributions are welcome! Please follow these steps:
+1. Fork the repository and create a feature branch.
+2. Ensure you have the full development environment set up.
+3. Write clear, documented code adhering to the existing style.
+4. Run the full test suite (`python -m pytest tests/`) to ensure no regressions.
+5. Submit a pull request detailing your changes and the problem they solve.
