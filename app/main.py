@@ -44,6 +44,7 @@ from app.db.vector_store import VectorStore
 from app.core.rag import RAGChat
 from app.core.quiz_generator import QuizGenerator
 from app.core.flashcard_generator import FlashcardGenerator
+from app.core.metadata_extractor import MetadataExtractor
 from app.db.metadata import JSONDatabase
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ vector_store = VectorStore()
 rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
+metadata_extractor = MetadataExtractor(GEMINI_API_KEY)
 db = JSONDatabase()
 app.state.db = db
 
@@ -149,11 +151,13 @@ class UploadJobManager:
         processor: DocumentProcessor,
         database: JSONDatabase,
         store: VectorStore,
+        extractor: MetadataExtractor,
         max_history: int = 100,
     ):
         self.processor = processor
         self.database = database
         self.store = store
+        self.extractor = extractor
         self.max_history = max_history
 
         self._jobs: Dict[str, UploadJob] = {}
@@ -320,8 +324,11 @@ class UploadJobManager:
             if predicted_tag:
                 self.database.add_tag(owner_username, predicted_tag)
 
-            self._update_job(job_id, stage="Indexing in vector database", progress=80)
-            doc_id = f"{filename}_{uuid.uuid4().hex[:8]}"
+            self._update_job(job_id, stage="Extracting academic metadata", progress=70)
+            extracted_metadata = self.extractor.extract_metadata(content)
+            self.database.set_document_metadata(owner_username, doc_id := f"{filename}_{uuid.uuid4().hex[:8]}", extracted_metadata)
+
+            self._update_job(job_id, stage="Indexing in vector database", progress=85)
             metadata = {
                 "owner_username": owner_username,
                 "filename": filename,
@@ -398,7 +405,7 @@ class UploadJobManager:
                     self._pending_order.remove(job_id)
 
 
-upload_jobs = UploadJobManager(doc_processor, db, vector_store)
+upload_jobs = UploadJobManager(doc_processor, db, vector_store, metadata_extractor)
 
 
 class ChatRequest(BaseModel):
@@ -741,6 +748,12 @@ async def generate_flashcards(request: FlashcardRequest, current_user: Authentic
         raise HTTPException(status_code=404, detail="Document not found or not processed yet")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating flashcards: {str(e)}")
+
+
+@app.get("/metadata")
+async def get_metadata(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Get all extracted metadata for the user"""
+    return db.get_all_metadata(current_user.username)
 
 
 if __name__ == "__main__":

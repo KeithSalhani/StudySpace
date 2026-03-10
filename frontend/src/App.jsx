@@ -9,6 +9,7 @@ import {
   generateQuiz,
   getCurrentUser,
   getDocuments,
+  getMetadata,
   getNotes,
   getTags,
   getUploadJobs,
@@ -369,6 +370,7 @@ export default function App() {
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [tags, setTags] = useState([]);
   const [notes, setNotes] = useState([]);
+  const [metadata, setMetadata] = useState({ assessments: [], deadlines: [], contacts: [] });
   const [chatMessages, setChatMessages] = useState(initialMessages);
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -412,6 +414,7 @@ export default function App() {
     setSelectedFiles(new Set());
     setTags([]);
     setNotes([]);
+    setMetadata({ assessments: [], deadlines: [], contacts: [] });
     setChatMessages(initialMessages);
     setChatInput("");
     setIsSending(false);
@@ -528,9 +531,11 @@ export default function App() {
     void loadTagsAndNotes();
     void loadDocumentsList();
     void loadUploadJobsList();
+    void loadMetadata();
 
     const timerId = window.setInterval(() => {
       void loadUploadJobsList();
+      void loadMetadata();
     }, 2000);
 
     return () => window.clearInterval(timerId);
@@ -575,6 +580,19 @@ export default function App() {
         return;
       }
       showError(error.message);
+    }
+  }
+
+  async function loadMetadata() {
+    try {
+      const payload = await getMetadata();
+      setMetadata(payload || { assessments: [], deadlines: [], contacts: [] });
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      console.error("Failed to load metadata:", error);
     }
   }
 
@@ -1215,6 +1233,56 @@ export default function App() {
               <div className="studio-card-title">Flashcards</div>
             </div>
           </button>
+        </section>
+
+        <section className="section">
+          <div className="section-title">Academic Insights</div>
+          
+          {metadata.deadlines.length > 0 && (
+            <div className="insight-group">
+              <div className="insight-label">Upcoming Deadlines</div>
+              <div className="stack">
+                {metadata.deadlines.map((d, i) => (
+                  <div key={i} className="insight-item">
+                    <div className="insight-text"><strong>{d.event}</strong></div>
+                    <div className="meta-text">{d.date}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {metadata.assessments.length > 0 && (
+            <div className="insight-group">
+              <div className="insight-label">Assessments</div>
+              <div className="stack">
+                {metadata.assessments.map((a, i) => (
+                  <div key={i} className="insight-item">
+                    <div className="insight-text">{a.item}</div>
+                    <div className="pill">{a.weight}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {metadata.contacts.length > 0 && (
+            <div className="insight-group">
+              <div className="insight-label">Contacts</div>
+              <div className="stack">
+                {metadata.contacts.map((c, i) => (
+                  <div key={i} className="insight-item">
+                    <div className="insight-text"><strong>{c.name}</strong> ({c.role})</div>
+                    <div className="meta-text">{c.email}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {metadata.deadlines.length === 0 && metadata.assessments.length === 0 && metadata.contacts.length === 0 && (
+            <div className="empty-card">Upload documents to extract insights.</div>
+          )}
         </section>
       </div>
     );
