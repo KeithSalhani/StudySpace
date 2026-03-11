@@ -64,6 +64,16 @@ export function deleteDocument(filename) {
   });
 }
 
+export function updateDocumentTag(filename, tag) {
+  return request(`/documents/${encodeURIComponent(filename)}/tag`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ tag })
+  });
+}
+
 export function getUploadJobs(limit = 50) {
   return request(`/upload-jobs?limit=${limit}`);
 }

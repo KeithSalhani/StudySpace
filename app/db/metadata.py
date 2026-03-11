@@ -214,25 +214,30 @@ class JSONDatabase:
                 return True
             return False
 
-    def set_document_metadata(self, username: str, doc_id: str, metadata: Dict[str, Any]) -> None:
+    def set_document_metadata(self, username: str, filename: str, metadata: Dict[str, Any]) -> None:
         with self._lock:
             user = self.data["users"].get(username)
             if not user:
                 return
             documents = user.setdefault("documents", {})
-            documents[doc_id] = metadata
+            documents[filename] = metadata
             self.save()
+
+    def delete_document_metadata(self, username: str, filename: str) -> bool:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return False
+            documents = user.setdefault("documents", {})
+            if filename in documents:
+                del documents[filename]
+                self.save()
+                return True
+            return False
 
     def get_all_metadata(self, username: str) -> Dict[str, Any]:
         with self._lock:
             user = self.data["users"].get(username)
             if not user:
-                return {"assessments": [], "deadlines": [], "contacts": []}
-            
-            all_docs = user.get("documents", {})
-            combined = {"assessments": [], "deadlines": [], "contacts": []}
-            for doc_meta in all_docs.values():
-                combined["assessments"].extend(doc_meta.get("assessments", []))
-                combined["deadlines"].extend(doc_meta.get("deadlines", []))
-                combined["contacts"].extend(doc_meta.get("contacts", []))
-            return combined
+                return {}
+            return user.get("documents", {})

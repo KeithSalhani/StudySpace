@@ -326,9 +326,10 @@ class UploadJobManager:
 
             self._update_job(job_id, stage="Extracting academic metadata", progress=70)
             extracted_metadata = self.extractor.extract_metadata(content)
-            self.database.set_document_metadata(owner_username, doc_id := f"{filename}_{uuid.uuid4().hex[:8]}", extracted_metadata)
+            self.database.set_document_metadata(owner_username, filename, extracted_metadata)
 
             self._update_job(job_id, stage="Indexing in vector database", progress=85)
+            doc_id = f"{filename}_{uuid.uuid4().hex[:8]}"
             metadata = {
                 "owner_username": owner_username,
                 "filename": filename,
@@ -654,6 +655,8 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
             if processed_path.exists():
                 processed_path.unlink(missing_ok=True)
 
+            db.delete_document_metadata(current_user.username, filename)
+
             return {"message": f"Document '{filename}' deleted successfully"}
 
         raise HTTPException(status_code=404, detail="Document not found in vector store")
@@ -663,6 +666,28 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
 
+class DocumentTagRequest(BaseModel):
+    tag: str
+
+@app.put("/documents/{filename}/tag")
+async def update_document_tag(filename: str, request: DocumentTagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Update the tag for a document"""
+    try:
+        # Check if doc exists
+        _get_owned_document_metadata(current_user.username, filename)
+        
+        # Add tag if it doesn't exist
+        db.add_tag(current_user.username, request.tag)
+
+        success = vector_store.update_document_tag(current_user.username, filename, request.tag)
+        if success:
+            return {"message": "Document tag updated successfully", "tag": request.tag}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update document tag")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating document tag: {str(e)}")
 
 # Tag Endpoints
 @app.get("/tags")
