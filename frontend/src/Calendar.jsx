@@ -207,12 +207,6 @@ export default function Calendar({ events = [], topics = [] }) {
             </div>
             <h2 className="fc-title">{monthNames[month]} {year}</h2>
           </div>
-          <div className="fc-header-right">
-            <select className="fc-view-select small-button">
-              <option>Month</option>
-              <option>Week</option>
-            </select>
-          </div>
         </div>
 
         <div className="fc-grid-wrapper">
