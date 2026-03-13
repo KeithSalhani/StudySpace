@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import Calendar from "./Calendar";
 import {
   createNote,
   createTag,
@@ -400,6 +401,7 @@ export default function App() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [mobileTab, setMobileTab] = useState("chat");
+  const [viewMode, setViewMode] = useState("workspace");
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -1424,6 +1426,9 @@ export default function App() {
               </div>
             </>
           )}
+          <button className="small-button" type="button" onClick={() => setViewMode(viewMode === "workspace" ? "calendar" : "workspace")}>
+            {viewMode === "workspace" ? "Calendar" : "Workspace"}
+          </button>
           <button className="small-button" type="button" onClick={() => void handleLogout()}>
             {isMobile ? "Exit" : "Log out"}
           </button>
@@ -1438,6 +1443,7 @@ export default function App() {
         </div>
       </div>
 
+      {viewMode === "workspace" ? (
       <div className="app-frame" style={frameStyle}>
         {isMobile ? (
           <main
@@ -1700,6 +1706,11 @@ export default function App() {
           </>
         )}
       </div>
+      ) : (
+        <div className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
+          <Calendar events={[]} topics={[]} />
+        </div>
+      )}
 
       {isMobile ? (
         <div className="mobile-tabbar-wrap">
