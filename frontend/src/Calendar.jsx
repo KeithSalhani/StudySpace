@@ -5,6 +5,7 @@ export default function Calendar({ events = [], topics = [] }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activeTopics, setActiveTopics] = useState(new Set(topics));
   const [academicYearStart, setAcademicYearStart] = useState("2025-08-04");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Initialize activeTopics when topics change
   useEffect(() => {
@@ -98,6 +99,7 @@ export default function Calendar({ events = [], topics = [] }) {
   const totalCells = Math.ceil((daysInMonth + firstDayOfMonth) / 7) * 7;
   const weeks = [];
   let currentWeek = [];
+  const allDays = []; // For mobile agenda view
 
   for (let i = 0; i < totalCells; i++) {
     const dayNumber = i - firstDayOfMonth + 1;
@@ -125,13 +127,18 @@ export default function Calendar({ events = [], topics = [] }) {
                eDate.getFullYear() === dateObj.getFullYear();
     });
 
-    currentWeek.push({
+    const dayData = {
       date: dateObj,
       isCurrentMonth,
       isToday,
       dayNumber: dateObj.getDate(),
       events: dayEvents
-    });
+    };
+
+    currentWeek.push(dayData);
+    if (isCurrentMonth) {
+      allDays.push(dayData);
+    }
 
     if (currentWeek.length === 7) {
       weeks.push(currentWeek);
@@ -141,8 +148,8 @@ export default function Calendar({ events = [], topics = [] }) {
 
   return (
     <div className="fc-container">
-      {/* Sidebar */}
-      <div className="fc-sidebar glass-panel">
+      {/* Sidebar - Hidden on mobile by default or moved to top */}
+      <div className={`fc-sidebar glass-panel ${sidebarOpen ? 'open' : ''}`}>
         <button className="fc-create-btn small-button primary" type="button">
           <span className="plus-icon">+</span> Create
         </button>
@@ -200,6 +207,13 @@ export default function Calendar({ events = [], topics = [] }) {
       <div className="fc-main glass-panel">
         <div className="fc-header">
           <div className="fc-header-left">
+            <button 
+              className="icon-button mobile-only" 
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              style={{ marginRight: '8px' }}
+            >
+              ☰
+            </button>
             <button className="small-button" onClick={setToday}>Today</button>
             <div className="fc-nav-arrows">
               <button className="icon-button" onClick={prevMonth}>&lt;</button>
@@ -209,7 +223,8 @@ export default function Calendar({ events = [], topics = [] }) {
           </div>
         </div>
 
-        <div className="fc-grid-wrapper">
+        {/* Desktop Grid View */}
+        <div className="fc-grid-wrapper desktop-only">
           <div className="fc-weekdays">
             <div className="fc-weekday-spacer"></div> {/* For week numbers */}
             {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((day, idx) => (
@@ -245,6 +260,42 @@ export default function Calendar({ events = [], topics = [] }) {
               );
             })}
           </div>
+        </div>
+
+        {/* Mobile Agenda View */}
+        <div className="fc-agenda-view mobile-only">
+          {allDays.map((day, dIdx) => {
+            const showWeekHeader = day.date.getDay() === 0 || day.dayNumber === 1;
+            const weekNum = getWeekNumber(day.date);
+            
+            return (
+              <React.Fragment key={dIdx}>
+                {showWeekHeader && (
+                  <div className="fc-agenda-week-header">
+                    Week {weekNum}
+                  </div>
+                )}
+                <div className={`fc-agenda-item ${day.isToday ? 'today' : ''}`}>
+                  <div className="fc-agenda-date">
+                    <div className="fc-agenda-dayname">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.date.getDay()]}</div>
+                    <div className={`fc-agenda-daynum ${day.isToday ? 'today' : ''}`}>{day.dayNumber}</div>
+                  </div>
+                  <div className="fc-agenda-events">
+                    {day.events.length > 0 ? (
+                      day.events.map((evt, eIdx) => (
+                        <div key={eIdx} className={`fc-agenda-event ${getTopicColorClass(evt.topic)}`}>
+                          <div className="fc-agenda-event-title">{evt.title}</div>
+                          <div className="fc-agenda-event-meta">{evt.topic}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="fc-agenda-no-events">No events</div>
+                    )}
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
     </div>

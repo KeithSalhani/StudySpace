@@ -1735,7 +1735,7 @@ export default function App() {
         </div>
       )}
 
-      {isMobile ? (
+      {isMobile && viewMode === "workspace" ? (
         <div className="mobile-tabbar-wrap">
           <nav className="mobile-tabbar" aria-label="Mobile workspace">
             <button
