@@ -1396,6 +1396,25 @@ export default function App() {
     );
   }
 
+  // Prepare calendar events
+  const allTopics = [...tags, "Uncategorized"];
+  const calendarEvents = [];
+  documents.forEach(doc => {
+    const docMeta = metadata[doc.filename];
+    const topic = doc.tag && tags.includes(doc.tag) ? doc.tag : "Uncategorized";
+    if (docMeta && docMeta.deadlines) {
+      docMeta.deadlines.forEach(d => {
+        if (d.date && d.event) {
+          calendarEvents.push({
+            title: d.event,
+            date: d.date,
+            topic: topic
+          });
+        }
+      });
+    }
+  });
+
   return (
     <div className="app-shell">
       <div className="app-noise" />
@@ -1708,7 +1727,7 @@ export default function App() {
       </div>
       ) : (
         <div className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
-          <Calendar events={[]} topics={[]} />
+          <Calendar events={calendarEvents} topics={allTopics} />
         </div>
       )}
 
