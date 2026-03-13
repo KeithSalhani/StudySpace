@@ -370,6 +370,7 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
+  const [expandedAssessments, setExpandedAssessments] = useState(new Set());
   const [tags, setTags] = useState([]);
   const [notes, setNotes] = useState([]);
   const [metadata, setMetadata] = useState({});
@@ -1098,7 +1099,8 @@ export default function App() {
                 })
                 .map(([tag, docs]) => {
                   const meta = tagMetadata[tag];
-                  const hasInsights = meta && (meta.assessments.length > 0 || meta.deadlines.length > 0 || meta.contacts.length > 0);
+                  const hasInsights = meta && (meta.assessments.length > 0 || meta.contacts.length > 0);
+                  const isAssessmentsExpanded = expandedAssessments.has(tag);
 
                   return (
                     <div key={tag} className="tag-group" style={{ marginBottom: '16px', background: 'var(--surface)', padding: '16px', borderRadius: '22px', border: '1px solid var(--border)' }}>
@@ -1109,31 +1111,33 @@ export default function App() {
 
                       {hasInsights && (
                         <div className="tag-insights" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          {meta.deadlines.length > 0 && (
-                            <div className="insight-group">
-                              <div className="insight-label">Deadlines</div>
-                              <div className="stack">
-                                {meta.deadlines.map((d, i) => (
-                                  <div key={i} className="insight-item">
-                                    <div className="insight-text"><strong>{d.event}</strong></div>
-                                    <div className="meta-text">{d.date}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
                           {meta.assessments.length > 0 && (
                             <div className="insight-group">
-                              <div className="insight-label">Assessments</div>
-                              <div className="stack">
-                                {meta.assessments.map((a, i) => (
-                                  <div key={i} className="insight-item">
-                                    <div className="insight-text">{a.item}</div>
-                                    <div className="pill">{a.weight}</div>
-                                  </div>
-                                ))}
+                              <div 
+                                className="insight-label" 
+                                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                onClick={() => {
+                                  setExpandedAssessments(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(tag)) next.delete(tag);
+                                    else next.add(tag);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                Assessments
+                                <span style={{ fontSize: '0.8rem' }}>{isAssessmentsExpanded ? '▲' : '▼'}</span>
                               </div>
+                              {isAssessmentsExpanded && (
+                                <div className="stack">
+                                  {meta.assessments.map((a, i) => (
+                                    <div key={i} className="insight-item">
+                                      <div className="insight-text">{a.item}</div>
+                                      <div className="pill">{a.weight}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
 
