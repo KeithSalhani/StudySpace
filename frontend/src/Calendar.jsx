@@ -4,6 +4,7 @@ import './Calendar.css'; // We will create this file for specific calendar style
 export default function Calendar({ events = [], topics = [] }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activeTopics, setActiveTopics] = useState(new Set(topics));
+  const [academicYearStart, setAcademicYearStart] = useState("2025-08-04");
 
   // Initialize activeTopics when topics change
   useEffect(() => {
@@ -65,8 +66,33 @@ export default function Calendar({ events = [], topics = [] }) {
     return Math.ceil((((date - yearStart) / 86400000) + 1)/7);
   };
 
+  // Adjust events based on academic year start
+  const adjustedEvents = events.map(e => {
+    if (!e.date) return e;
+    const dateObj = new Date(e.date);
+    if (isNaN(dateObj.getTime())) return e;
+
+    const startObj = new Date(academicYearStart);
+    if (isNaN(startObj.getTime())) return e;
+
+    const startMonth = startObj.getMonth();
+    const startYear = startObj.getFullYear();
+
+    if (dateObj.getMonth() >= startMonth) {
+      dateObj.setFullYear(startYear);
+    } else {
+      dateObj.setFullYear(startYear + 1);
+    }
+
+    return {
+      ...e,
+      originalDate: e.date,
+      date: dateObj.toISOString()
+    };
+  });
+
   // Filter events by active topics
-  const filteredEvents = events.filter(e => activeTopics.has(e.topic));
+  const filteredEvents = adjustedEvents.filter(e => activeTopics.has(e.topic));
 
   // Generate grid cells
   const totalCells = Math.ceil((daysInMonth + firstDayOfMonth) / 7) * 7;
@@ -137,6 +163,20 @@ export default function Calendar({ events = [], topics = [] }) {
               );
             })}
           </div>
+        </div>
+
+        <div className="fc-sidebar-section">
+          <div className="fc-sidebar-title">Settings</div>
+          <label style={{ fontSize: '0.8rem', color: 'var(--text-soft)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            Academic Year Start
+            <input 
+              type="date" 
+              className="input fc-date-input" 
+              style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+              value={academicYearStart} 
+              onChange={(e) => setAcademicYearStart(e.target.value)}
+            />
+          </label>
         </div>
 
         <div className="fc-sidebar-section">
