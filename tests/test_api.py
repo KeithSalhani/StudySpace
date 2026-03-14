@@ -98,3 +98,56 @@ def test_documents_are_isolated_per_user(mock_vector_store, client):
     assert response.status_code == 200
     assert response.json()["documents"] == [{"filename": "alice.pdf", "tag": "Security"}]
     mock_vector_store.list_documents.assert_called_once_with("alice")
+
+
+def test_get_metadata_scoped_to_user(client):
+    sign_up(client, "alice", "password123")
+    
+    # Mock some metadata in the DB for Alice
+    test_db = main_module.app.state.db
+    test_db.set_document_metadata("alice", "doc1.pdf", {"assessments": [{"item": "A1"}]})
+    
+    response = client.get("/metadata")
+    assert response.status_code == 200
+    data = response.json()
+    assert "doc1.pdf" in data
+    assert data["doc1.pdf"]["assessments"][0]["item"] == "A1"
+
+    # Bob should not see Alice's metadata
+    client.post("/auth/logout")
+    sign_up(client, "bob", "password123")
+    
+    response = client.get("/metadata")
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+@patch("app.main.vector_store")
+def test_update_document_tag_endpoint(mock_vector_store, client):
+    sign_up(client, "alice", "password123")
+    
+    # Setup mock behaviors
+    mock_vector_store.get_document_metadata.return_value = {"filename": "test.pdf", "owner_username": "alice"}
+    mock_vector_store.update_document_tag.return_value = True
+    
+    payload = {"tag": "NewTag"}
+    response = client.put("/documents/test.pdf/tag", json=payload)
+    
+    assert response.status_code == 200
+    assert response.json()["tag"] == "NewTag"
+    
+    # Verify DB updated
+    test_db = main_module.app.state.db
+    assert "NewTag" in test_db.get_tags("alice")
+    
+    # Verify vector store called
+    mock_vector_store.update_document_tag.assert_called_once_with("alice", "test.pdf", "NewTag")
+
+
+@patch("app.main.vector_store")
+def test_update_document_tag_nonexistent_fails(mock_vector_store, client):
+    sign_up(client, "alice", "password123")
+    mock_vector_store.get_document_metadata.return_value = None
+    
+    response = client.put("/documents/missing.pdf/tag", json={"tag": "Any"})
+    assert response.status_code == 404
