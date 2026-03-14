@@ -68,3 +68,57 @@ def test_sessions_are_scoped_to_user(db):
     assert session["hash"] == "session-hash"
     assert db.delete_session("session-1") is True
     assert db.get_session("session-1") is None
+
+
+def test_document_metadata_is_scoped_per_user(db):
+    db.create_user("alice", "hash-a", "salt-a")
+    db.create_user("bob", "hash-b", "salt-b")
+
+    alice_meta = {"assessments": [{"item": "Exam", "weight": "100%"}]}
+    bob_meta = {"assessments": [{"item": "Project", "weight": "50%"}]}
+
+    db.set_document_metadata("alice", "doc1.pdf", alice_meta)
+    db.set_document_metadata("bob", "doc2.pdf", bob_meta)
+
+    assert db.get_all_metadata("alice") == {"doc1.pdf": alice_meta}
+    assert db.get_all_metadata("bob") == {"doc2.pdf": bob_meta}
+
+
+def test_delete_document_metadata(db):
+    db.create_user("alice", "hash", "salt")
+    meta = {"assessments": []}
+    
+    db.set_document_metadata("alice", "doc1.pdf", meta)
+    assert "doc1.pdf" in db.get_all_metadata("alice")
+    
+    assert db.delete_document_metadata("alice", "doc1.pdf") is True
+    assert "doc1.pdf" not in db.get_all_metadata("alice")
+    assert db.delete_document_metadata("alice", "nonexistent.pdf") is False
+
+
+def test_migrate_initializes_documents_field(db_file):
+    # Create a legacy DB without the "documents" field
+    legacy_data = {
+        "users": {
+            "alice": {
+                "id": "1",
+                "username": "alice",
+                "password_hash": "h",
+                "password_salt": "s",
+                "created_at": "2025-01-01T00:00:00Z",
+                "tags": ["Tag1"],
+                "notes": [{"id": "n1", "content": "note1"}],
+                "sessions": []
+            }
+        }
+    }
+    with open(db_file, "w", encoding="utf-8") as f:
+        json.dump(legacy_data, f)
+
+    # Load DB and check if "documents" was added
+    db = JSONDatabase(str(db_file))
+    user = db.data["users"]["alice"]
+    assert "documents" in user
+    assert user["documents"] == {}
+    assert user["tags"] == ["Tag1"]
+    assert user["notes"][0]["content"] == "note1"
