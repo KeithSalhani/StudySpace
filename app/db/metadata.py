@@ -28,6 +28,7 @@ class JSONDatabase:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "tags": [],
                 "notes": [],
+                "documents": {},
                 "sessions": [],
             }
         return users[username]
@@ -50,6 +51,7 @@ class JSONDatabase:
                 user.setdefault("created_at", datetime.now(timezone.utc).isoformat())
                 user.setdefault("tags", [])
                 user.setdefault("notes", [])
+                user.setdefault("documents", {})
                 user.setdefault("sessions", [])
             return migrated
 
@@ -211,3 +213,26 @@ class JSONDatabase:
                 self.save()
                 return True
             return False
+
+    def set_document_metadata(self, username: str, doc_id: str, metadata: Dict[str, Any]) -> None:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return
+            documents = user.setdefault("documents", {})
+            documents[doc_id] = metadata
+            self.save()
+
+    def get_all_metadata(self, username: str) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return {"assessments": [], "deadlines": [], "contacts": []}
+            
+            all_docs = user.get("documents", {})
+            combined = {"assessments": [], "deadlines": [], "contacts": []}
+            for doc_meta in all_docs.values():
+                combined["assessments"].extend(doc_meta.get("assessments", []))
+                combined["deadlines"].extend(doc_meta.get("deadlines", []))
+                combined["contacts"].extend(doc_meta.get("contacts", []))
+            return combined

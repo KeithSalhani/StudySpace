@@ -157,3 +157,7 @@ export function generateFlashcards(filename) {
     })
   });
 }
+
+export function getMetadata() {
+  return request("/metadata");
+}
