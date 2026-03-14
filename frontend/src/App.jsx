@@ -1401,7 +1401,7 @@ export default function App() {
   }
 
   // Prepare calendar events
-  const allTopics = [...tags, "Uncategorized"];
+  const allTopics = Array.from(new Set([...tags, "Uncategorized"]));
   const calendarEvents = [];
   documents.forEach(doc => {
     const docMeta = metadata[doc.filename];
