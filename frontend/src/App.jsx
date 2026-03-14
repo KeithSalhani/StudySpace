@@ -358,6 +358,96 @@ function SidebarToggle({ side, open, onClick, mobile = false, label }) {
   );
 }
 
+function SettingsModal({ 
+  onClose, 
+  tags, 
+  tagDraft, 
+  onTagDraftChange, 
+  onAddTag, 
+  onDeleteTag 
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <div className="modal-head">
+          <div>
+            <div className="chat-title">Settings</div>
+            <div className="header-subtitle">
+              Manage topics, sections, and global workspace preferences.
+            </div>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="modal-body">
+          <section className="section">
+            <div className="section-head">
+              <div className="section-title">Topics</div>
+              <div className="helper-text">{tags.length} active lens{tags.length === 1 ? '' : 'es'}</div>
+            </div>
+            <p className="meta-text" style={{ marginBottom: '16px' }}>
+              Topics act as academic filters for your documents and insights.
+            </p>
+            <div className="tags-wrap" style={{ marginBottom: '20px' }}>
+              {tags.length ? (
+                tags.map((tag) => (
+                  <div key={tag} className="tag-chip">
+                    <span>{tag}</span>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${tag}`}
+                      onClick={() => void onDeleteTag(tag)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-card compact">No topics yet.</div>
+              )}
+            </div>
+            <div className="input-row">
+              <input
+                className="input"
+                value={tagDraft}
+                placeholder="Add a topic lens (e.g. AI, CS101)..."
+                onChange={(event) => onTagDraftChange(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void onAddTag();
+                  }
+                }}
+              />
+              <button
+                className="small-button primary"
+                type="button"
+                onClick={() => void onAddTag()}
+              >
+                Add
+              </button>
+            </div>
+          </section>
+
+          <section className="section" style={{ marginTop: '32px', opacity: 0.6 }}>
+            <div className="section-head">
+              <div className="section-title">Workspace Sections</div>
+              <div className="micro-pill">Coming soon</div>
+            </div>
+            <p className="meta-text">
+              Custom layout sections for your sidebar.
+            </p>
+          </section>
+        </div>
+        <div className="modal-footer" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="small-button primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [theme, setTheme] = useState(
     localStorage.getItem("theme") === "dark" ? "dark" : "light"
@@ -403,6 +493,7 @@ export default function App() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [mobileTab, setMobileTab] = useState("chat");
   const [viewMode, setViewMode] = useState("workspace");
+  const [showSettings, setShowSettings] = useState(false);
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -1229,51 +1320,6 @@ export default function App() {
 
         <section className="section">
           <div className="section-head">
-            <div className="section-title">Topics</div>
-          </div>
-          <div className="tags-wrap">
-            {tags.length ? (
-              tags.map((tag) => (
-                <div key={tag} className="tag-chip">
-                  <span>{tag}</span>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${tag}`}
-                    onClick={() => void handleDeleteTag(tag)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))
-            ) : (
-              <div className="empty-card compact">No topics yet.</div>
-            )}
-          </div>
-          <div className="input-row">
-            <input
-              className="input"
-              value={tagDraft}
-              placeholder="Add a topic lens..."
-              onChange={(event) => setTagDraft(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void handleAddTag();
-                }
-              }}
-            />
-            <button
-              className="small-button primary"
-              type="button"
-              onClick={() => void handleAddTag()}
-            >
-              Add
-            </button>
-          </div>
-        </section>
-
-        <section className="section">
-          <div className="section-head">
             <div className="section-title">Notes</div>
             <div className="helper-text">{notes.length} saved</div>
           </div>
@@ -1454,6 +1500,9 @@ export default function App() {
           )}
           <button className="small-button" type="button" onClick={() => setViewMode(viewMode === "workspace" ? "calendar" : "workspace")}>
             {viewMode === "workspace" ? "Calendar" : "Workspace"}
+          </button>
+          <button className="small-button" type="button" onClick={() => setShowSettings(true)}>
+            Settings
           </button>
           <button className="small-button" type="button" onClick={() => void handleLogout()}>
             {isMobile ? "Exit" : "Log out"}
@@ -1802,6 +1851,17 @@ export default function App() {
               side: "front"
             }))
           }
+        />
+      ) : null}
+
+      {showSettings ? (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          tags={tags}
+          tagDraft={tagDraft}
+          onTagDraftChange={(val) => setTagDraft(val)}
+          onAddTag={() => void handleAddTag()}
+          onDeleteTag={(tag) => void handleDeleteTag(tag)}
         />
       ) : null}
 
