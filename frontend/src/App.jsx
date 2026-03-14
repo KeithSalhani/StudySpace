@@ -539,11 +539,14 @@ export default function App() {
 
     const timerId = window.setInterval(() => {
       void loadUploadJobsList();
-      void loadMetadata();
+      // Only refresh metadata frequently while there are active upload jobs.
+      if (uploadJobs.length > 0) {
+        void loadMetadata();
+      }
     }, 2000);
 
     return () => window.clearInterval(timerId);
-  }, [authStatus]);
+  }, [authStatus, uploadJobs.length]);
 
   useEffect(() => {
     if (!selectedDocument) {
