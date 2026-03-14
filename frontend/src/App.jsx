@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import Calendar from "./Calendar";
 import {
   createNote,
   createTag,
@@ -19,7 +20,8 @@ import {
   removeNote,
   removeTag,
   sendChatMessage,
-  uploadDocument
+  uploadDocument,
+  updateDocumentTag
 } from "./api";
 
 const COMPLETED_UPLOAD_VISIBLE_MS = 4000;
@@ -368,9 +370,10 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
+  const [expandedAssessments, setExpandedAssessments] = useState(new Set());
   const [tags, setTags] = useState([]);
   const [notes, setNotes] = useState([]);
-  const [metadata, setMetadata] = useState({ assessments: [], deadlines: [], contacts: [] });
+  const [metadata, setMetadata] = useState({});
   const [chatMessages, setChatMessages] = useState(initialMessages);
   const [chatInput, setChatInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -399,6 +402,7 @@ export default function App() {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [mobileTab, setMobileTab] = useState("chat");
+  const [viewMode, setViewMode] = useState("workspace");
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -414,7 +418,7 @@ export default function App() {
     setSelectedFiles(new Set());
     setTags([]);
     setNotes([]);
-    setMetadata({ assessments: [], deadlines: [], contacts: [] });
+    setMetadata({});
     setChatMessages(initialMessages);
     setChatInput("");
     setIsSending(false);
@@ -535,11 +539,14 @@ export default function App() {
 
     const timerId = window.setInterval(() => {
       void loadUploadJobsList();
-      void loadMetadata();
+      // Only refresh metadata frequently while there are active upload jobs.
+      if (uploadJobs.length > 0) {
+        void loadMetadata();
+      }
     }, 2000);
 
     return () => window.clearInterval(timerId);
-  }, [authStatus]);
+  }, [authStatus, uploadJobs.length]);
 
   useEffect(() => {
     if (!selectedDocument) {
@@ -586,7 +593,7 @@ export default function App() {
   async function loadMetadata() {
     try {
       const payload = await getMetadata();
-      setMetadata(payload || { assessments: [], deadlines: [], contacts: [] });
+      setMetadata(payload || {});
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -747,6 +754,7 @@ export default function App() {
     try {
       await deleteDocument(filename);
       await loadDocumentsList();
+      await loadMetadata();
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -755,6 +763,21 @@ export default function App() {
       showError(error.message);
     }
   }
+
+  async function handleUpdateTag(filename, newTag) {
+    try {
+      await updateDocumentTag(filename, newTag);
+      await loadDocumentsList();
+      await loadTagsAndNotes(); // since adding a tag can create a new one
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      showError(error.message);
+    }
+  }
+
 
   async function handleSendMessage() {
     const message = chatInput.trim();
@@ -959,6 +982,31 @@ export default function App() {
     mobileTab === "sources" ? "Sources" : mobileTab === "studio" ? "Studio" : "Chat";
 
   function renderWorkspaceSections() {
+    const groupedDocuments = {};
+    groupedDocuments["Uncategorized"] = [];
+    tags.forEach(tag => { groupedDocuments[tag] = []; });
+    
+    documents.forEach(doc => {
+      const tag = doc.tag && tags.includes(doc.tag) ? doc.tag : "Uncategorized";
+      if (!groupedDocuments[tag]) {
+        groupedDocuments[tag] = [];
+      }
+      groupedDocuments[tag].push(doc);
+    });
+
+    const tagMetadata = {};
+    Object.keys(groupedDocuments).forEach(tag => {
+      tagMetadata[tag] = { assessments: [], deadlines: [], contacts: [] };
+      groupedDocuments[tag].forEach(doc => {
+        const docMeta = metadata[doc.filename];
+        if (docMeta) {
+          if (docMeta.assessments) tagMetadata[tag].assessments.push(...docMeta.assessments);
+          if (docMeta.deadlines) tagMetadata[tag].deadlines.push(...docMeta.deadlines);
+          if (docMeta.contacts) tagMetadata[tag].contacts.push(...docMeta.contacts);
+        }
+      });
+    });
+
     return (
       <div className="sidebar-stack">
         <section className="section">
@@ -1040,53 +1088,139 @@ export default function App() {
 
         <section className="section">
           <div className="section-head">
-            <div className="section-title">Documents</div>
+            <div className="section-title">Documents & Insights</div>
             <div className="helper-text">{documents.length} indexed</div>
           </div>
           <div className="stack">
             {documents.length ? (
-              documents.map((doc) => (
-                <div key={doc.filename} className="document-item">
-                  <label className="document-select">
-                    <input
-                      type="checkbox"
-                      checked={selectedFiles.has(doc.filename)}
-                      onChange={() =>
-                        setSelectedFiles((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(doc.filename)) {
-                            next.delete(doc.filename);
-                          } else {
-                            next.add(doc.filename);
-                          }
-                          return next;
-                        })
-                      }
-                    />
-                    <div className="document-meta">
-                      <div className="document-name" title={doc.filename}>
-                        {doc.filename}
+              Object.entries(groupedDocuments)
+                .filter(([tag, docs]) => docs.length > 0)
+                .sort(([tagA], [tagB]) => {
+                  if (tagA === "Uncategorized") return 1;
+                  if (tagB === "Uncategorized") return -1;
+                  return tagA.localeCompare(tagB);
+                })
+                .map(([tag, docs]) => {
+                  const meta = tagMetadata[tag];
+                  const hasInsights = meta && (meta.assessments.length > 0 || meta.contacts.length > 0);
+                  const isAssessmentsExpanded = expandedAssessments.has(tag);
+
+                  return (
+                    <div key={tag} className="tag-group" style={{ marginBottom: '16px', background: 'var(--surface)', padding: '16px', borderRadius: '22px', border: '1px solid var(--border)' }}>
+                      <div className="tag-group-header" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <h3 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--text)' }}>{tag}</h3>
+                        <div className="micro-pill">{docs.length} file{docs.length === 1 ? '' : 's'}</div>
                       </div>
-                      <div className="document-line">
-                        {doc.tag ? <span className="pill">{doc.tag}</span> : null}
-                        {selectedFiles.has(doc.filename) ? (
-                          <span className="micro-pill active">Live</span>
-                        ) : (
-                          <span className="micro-pill">Muted</span>
-                        )}
+
+                      {hasInsights && (
+                        <div className="tag-insights" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {meta.assessments.length > 0 && (
+                            <div className="insight-group">
+                              <div 
+                                className="insight-label" 
+                                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                onClick={() => {
+                                  setExpandedAssessments(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(tag)) next.delete(tag);
+                                    else next.add(tag);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                Assessments
+                                <span style={{ fontSize: '0.8rem' }}>{isAssessmentsExpanded ? '▲' : '▼'}</span>
+                              </div>
+                              {isAssessmentsExpanded && (
+                                <div className="stack">
+                                  {meta.assessments.map((a, i) => (
+                                    <div key={i} className="insight-item">
+                                      <div className="insight-text">{a.item}</div>
+                                      <div className="pill">{a.weight}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {meta.contacts.length > 0 && (
+                            <div className="insight-group">
+                              <div className="insight-label">Contacts</div>
+                              <div className="stack">
+                                {meta.contacts.map((c, i) => (
+                                  <div key={i} className="insight-item">
+                                    <div className="insight-text"><strong>{c.name}</strong> ({c.role})</div>
+                                    <div className="meta-text">{c.email}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="stack">
+                        {docs.map((doc) => (
+                          <div key={doc.filename} className="document-item" style={{ background: 'var(--surface-strong)' }}>
+                            <label className="document-select">
+                              <input
+                                type="checkbox"
+                                checked={selectedFiles.has(doc.filename)}
+                                onChange={() =>
+                                  setSelectedFiles((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(doc.filename)) {
+                                      next.delete(doc.filename);
+                                    } else {
+                                      next.add(doc.filename);
+                                    }
+                                    return next;
+                                  })
+                                }
+                              />
+                              <div className="document-meta">
+                                <div className="document-name" title={doc.filename}>
+                                  {doc.filename}
+                                </div>
+                                <div className="document-line">
+                                  <select 
+                                    className="micro-pill" 
+                                    style={{ border: 'none', appearance: 'none', cursor: 'pointer', outline: 'none', paddingRight: '20px', background: 'rgba(255, 255, 255, 0.2) url("data:image/svg+xml;utf8,<svg fill=%27black%27 height=%2724%27 viewBox=%270 0 24 24%27 width=%2724%27 xmlns=%27http://www.w3.org/2000/svg%27><path d=%27M7 10l5 5 5-5z%27/><path d=%27M0 0h24v24H0z%27 fill=%27none%27/></svg>") no-repeat right 4px center/14px 14px', color: 'inherit' }}
+                                    value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
+                                    onChange={(e) => {
+                                      if (e.target.value !== (doc.tag || "")) {
+                                        void handleUpdateTag(doc.filename, e.target.value);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Uncategorized</option>
+                                    {tags.map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                  {selectedFiles.has(doc.filename) ? (
+                                    <span className="micro-pill active">Live</span>
+                                  ) : (
+                                    <span className="micro-pill">Muted</span>
+                                  )}
+                                </div>
+                              </div>
+                            </label>
+                            <button
+                              className="icon-button"
+                              type="button"
+                              title="Delete"
+                              onClick={() => void handleDeleteDocument(doc.filename)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </label>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    title="Delete"
-                    onClick={() => void handleDeleteDocument(doc.filename)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))
+                  );
+                })
             ) : (
               <div className="empty-card">No documents yet. Start by dropping a file.</div>
             )}
@@ -1234,56 +1368,6 @@ export default function App() {
             </div>
           </button>
         </section>
-
-        <section className="section">
-          <div className="section-title">Academic Insights</div>
-          
-          {metadata.deadlines.length > 0 && (
-            <div className="insight-group">
-              <div className="insight-label">Upcoming Deadlines</div>
-              <div className="stack">
-                {metadata.deadlines.map((d, i) => (
-                  <div key={i} className="insight-item">
-                    <div className="insight-text"><strong>{d.event}</strong></div>
-                    <div className="meta-text">{d.date}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {metadata.assessments.length > 0 && (
-            <div className="insight-group">
-              <div className="insight-label">Assessments</div>
-              <div className="stack">
-                {metadata.assessments.map((a, i) => (
-                  <div key={i} className="insight-item">
-                    <div className="insight-text">{a.item}</div>
-                    <div className="pill">{a.weight}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {metadata.contacts.length > 0 && (
-            <div className="insight-group">
-              <div className="insight-label">Contacts</div>
-              <div className="stack">
-                {metadata.contacts.map((c, i) => (
-                  <div key={i} className="insight-item">
-                    <div className="insight-text"><strong>{c.name}</strong> ({c.role})</div>
-                    <div className="meta-text">{c.email}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {metadata.deadlines.length === 0 && metadata.assessments.length === 0 && metadata.contacts.length === 0 && (
-            <div className="empty-card">Upload documents to extract insights.</div>
-          )}
-        </section>
       </div>
     );
   }
@@ -1319,6 +1403,25 @@ export default function App() {
     );
   }
 
+  // Prepare calendar events
+  const allTopics = Array.from(new Set([...tags, "Uncategorized"]));
+  const calendarEvents = [];
+  documents.forEach(doc => {
+    const docMeta = metadata[doc.filename];
+    const topic = doc.tag && tags.includes(doc.tag) ? doc.tag : "Uncategorized";
+    if (docMeta && docMeta.deadlines) {
+      docMeta.deadlines.forEach(d => {
+        if (d.date && d.event) {
+          calendarEvents.push({
+            title: d.event,
+            date: d.date,
+            topic: topic
+          });
+        }
+      });
+    }
+  });
+
   return (
     <div className="app-shell">
       <div className="app-noise" />
@@ -1349,6 +1452,9 @@ export default function App() {
               </div>
             </>
           )}
+          <button className="small-button" type="button" onClick={() => setViewMode(viewMode === "workspace" ? "calendar" : "workspace")}>
+            {viewMode === "workspace" ? "Calendar" : "Workspace"}
+          </button>
           <button className="small-button" type="button" onClick={() => void handleLogout()}>
             {isMobile ? "Exit" : "Log out"}
           </button>
@@ -1363,6 +1469,7 @@ export default function App() {
         </div>
       </div>
 
+      {viewMode === "workspace" ? (
       <div className="app-frame" style={frameStyle}>
         {isMobile ? (
           <main
@@ -1625,8 +1732,13 @@ export default function App() {
           </>
         )}
       </div>
+      ) : (
+        <div className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
+          <Calendar events={calendarEvents} topics={allTopics} />
+        </div>
+      )}
 
-      {isMobile ? (
+      {isMobile && viewMode === "workspace" ? (
         <div className="mobile-tabbar-wrap">
           <nav className="mobile-tabbar" aria-label="Mobile workspace">
             <button

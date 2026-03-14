@@ -1,0 +1,455 @@
+.fc-container {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  gap: 16px;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.fc-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 24px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.fc-create-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  font-size: 1rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow-soft);
+}
+
+.plus-icon {
+  font-size: 1.4rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.fc-sidebar-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.fc-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+.fc-mini-dayname {
+  color: var(--text-soft);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.fc-mini-day {
+  padding: 4px 0;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.fc-mini-day:hover:not(.muted) {
+  background: var(--surface-muted);
+}
+
+.fc-mini-day.muted {
+  color: var(--border);
+}
+
+.fc-mini-day.today {
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+}
+
+.fc-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fc-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.fc-checkbox {
+  display: none;
+}
+
+.fc-checkbox-custom {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 2px solid;
+  display: inline-block;
+  position: relative;
+}
+
+.fc-checkbox:checked + .fc-checkbox-custom::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.topic-color-1 { color: var(--accent-hot); border-color: var(--accent-hot); }
+.topic-color-2 { color: var(--accent-mint); border-color: var(--accent-mint); }
+.topic-color-3 { color: var(--accent); border-color: var(--accent); }
+.topic-color-4 { color: #ffa133; border-color: #ffa133; }
+.topic-color-5 { color: #33c4ff; border-color: #33c4ff; }
+.topic-color-0 { color: var(--text-muted); border-color: var(--text-muted); }
+
+.fc-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.fc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fc-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.fc-nav-arrows {
+  display: flex;
+  gap: 4px;
+}
+
+.fc-title {
+  font-size: 1.4rem;
+  margin: 0 0 0 8px;
+  font-weight: 400;
+}
+
+.fc-view-select {
+  padding: 6px 12px;
+}
+
+.fc-grid-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel-strong);
+}
+
+body.dark-mode .fc-grid-wrapper {
+  background: var(--surface-strong);
+}
+
+.fc-weekdays {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.fc-weekday-spacer {
+  width: 40px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+
+.fc-weekday {
+  flex: 1;
+  text-align: center;
+  padding: 10px 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  border-right: 1px solid var(--border);
+}
+
+.fc-weekday:last-child {
+  border-right: none;
+}
+
+.fc-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fc-week-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fc-week-row:last-child {
+  border-bottom: none;
+}
+
+.fc-week-number {
+  width: 40px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  border-right: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--text-soft);
+}
+
+.fc-day-cell {
+  flex: 1;
+  border-right: 1px solid var(--border);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fc-day-cell:last-child {
+  border-right: none;
+}
+
+.fc-day-other-month .fc-day-number {
+  color: var(--text-soft);
+  opacity: 0.5;
+}
+
+.fc-day-number {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: center;
+  margin-bottom: 4px;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 50%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.fc-day-today {
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+}
+
+.fc-day-events {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fc-event {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.fc-event.topic-color-1 { background: rgba(255, 79, 163, 0.12); color: var(--accent-hot); }
+.fc-event.topic-color-1:hover { background: var(--accent-hot); color: white; }
+
+.fc-event.topic-color-2 { background: rgba(16, 185, 129, 0.12); color: var(--accent-mint); }
+.fc-event.topic-color-2:hover { background: var(--accent-mint); color: white; }
+
+.fc-event.topic-color-3 { background: rgba(91, 68, 255, 0.12); color: var(--accent); }
+.fc-event.topic-color-3:hover { background: var(--accent); color: white; }
+
+.fc-event.topic-color-4 { background: rgba(255, 161, 51, 0.12); color: #ffa133; }
+.fc-event.topic-color-4:hover { background: #ffa133; color: white; }
+
+.fc-event.topic-color-5 { background: rgba(51, 196, 255, 0.12); color: #33c4ff; }
+.fc-event.topic-color-5:hover { background: #33c4ff; color: white; }
+
+.fc-event.topic-color-0 { background: var(--surface-muted); color: var(--text-muted); }
+.fc-event.topic-color-0:hover { background: var(--text-muted); color: white; }
+
+/* Visibility Utilities */
+.desktop-only { }
+.mobile-only { display: none; }
+
+/* Mobile Agenda View */
+.fc-agenda-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface);
+  min-height: 0;
+}
+
+.fc-agenda-week-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.fc-agenda-item {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.fc-agenda-date {
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.fc-agenda-dayname {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.fc-agenda-daynum {
+  font-size: 1.2rem;
+  font-weight: 600;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-radius: 50%;
+}
+
+.fc-agenda-daynum.today {
+  background: var(--accent);
+  color: white;
+}
+
+.fc-agenda-events {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fc-agenda-event {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border-left: 4px solid;
+}
+
+.fc-agenda-event-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.fc-agenda-event-meta {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.fc-agenda-no-events {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  padding: 4px 0;
+}
+
+/* Responsive Styles */
+@media (max-width: 900px) {
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block !important; }
+
+  .fc-container {
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .fc-sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100%;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+  }
+
+  .fc-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .fc-mini-cal {
+    display: none;
+  }
+
+  .fc-header {
+    padding: 12px 16px;
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+
+  .fc-title {
+    font-size: 1.1rem;
+  }
+
+  .fc-main {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .fc-agenda-view {
+    display: flex !important;
+  }
+}
+

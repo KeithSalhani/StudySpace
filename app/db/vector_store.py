@@ -294,6 +294,45 @@ class VectorStore:
                     return dict(metadata)
         return None
 
+    def update_document_tag(self, owner_username: str, filename: str, new_tag: str) -> bool:
+        """Update the tag for all chunks of a specific document."""
+        try:
+            with self._lock:
+                doc_ids_to_update = []
+                for doc_id, doc_data in self.documents.items():
+                    metadata = doc_data.get("metadata", {})
+                    if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
+                        doc_ids_to_update.append((doc_id, metadata, doc_data["chunks"]))
+
+                if not doc_ids_to_update:
+                    return False
+
+                for doc_id, metadata, num_chunks in doc_ids_to_update:
+                    # Update metadata in memory
+                    metadata["tag"] = new_tag
+                    
+                    # Prepare data to update in ChromaDB
+                    ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
+                    metadatas = []
+                    for i in range(num_chunks):
+                        chunk_meta = metadata.copy()
+                        chunk_meta.update({
+                            "doc_id": doc_id,
+                            "chunk_index": i,
+                            "total_chunks": num_chunks
+                        })
+                        metadatas.append(chunk_meta)
+
+                    # Update in ChromaDB collection
+                    self.collection.update(ids=ids, metadatas=metadatas)
+
+                logger.info(f"Updated tag to '{new_tag}' for document {filename}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error updating tag for document {filename}: {str(e)}")
+            return False
+
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """
         Split text into chunks

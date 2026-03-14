@@ -326,9 +326,10 @@ class UploadJobManager:
 
             self._update_job(job_id, stage="Extracting academic metadata", progress=70)
             extracted_metadata = self.extractor.extract_metadata(content)
-            self.database.set_document_metadata(owner_username, doc_id := f"{filename}_{uuid.uuid4().hex[:8]}", extracted_metadata)
+            self.database.set_document_metadata(owner_username, filename, extracted_metadata)
 
             self._update_job(job_id, stage="Indexing in vector database", progress=85)
+            doc_id = f"{filename}_{uuid.uuid4().hex[:8]}"
             metadata = {
                 "owner_username": owner_username,
                 "filename": filename,
@@ -654,6 +655,8 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
             if processed_path.exists():
                 processed_path.unlink(missing_ok=True)
 
+            db.delete_document_metadata(current_user.username, filename)
+
             return {"message": f"Document '{filename}' deleted successfully"}
 
         raise HTTPException(status_code=404, detail="Document not found in vector store")
@@ -663,6 +666,37 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
 
+class DocumentTagRequest(BaseModel):
+    tag: Optional[str] = None
+
+@app.put("/documents/{filename}/tag")
+async def update_document_tag(filename: str, request: DocumentTagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Update the tag for a document"""
+    try:
+        # Check if doc exists
+        _get_owned_document_metadata(current_user.username, filename)
+        
+        # Normalize and validate tag
+        raw_tag = request.tag if request.tag is not None else ""
+        normalized_tag = raw_tag.strip()
+        
+        # Treat reserved/sentinel values as "no tag"
+        if normalized_tag.lower() == "uncategorized":
+            normalized_tag = ""
+
+        # Only add non-empty, non-reserved tags to the user's tag list
+        if normalized_tag:
+            db.add_tag(current_user.username, normalized_tag)
+
+        success = vector_store.update_document_tag(current_user.username, filename, normalized_tag)
+        if success:
+            return {"message": "Document tag updated successfully", "tag": normalized_tag}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update document tag")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating document tag: {str(e)}")
 
 # Tag Endpoints
 @app.get("/tags")
