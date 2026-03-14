@@ -27,14 +27,7 @@ import {
 const COMPLETED_UPLOAD_VISIBLE_MS = 4000;
 const MOBILE_BREAKPOINT = 900;
 
-const initialMessages = [
-  {
-    id: crypto.randomUUID(),
-    type: "bot",
-    content: "Your study stack is live. Add documents and start asking questions.",
-    sources: []
-  }
-];
+const initialMessages = [];
 
 const starterQuestions = [
   "Give me a quick summary.",
@@ -1661,7 +1654,7 @@ export default function App() {
                 </div>
 
                 <div className="chat-body" ref={chatBodyRef}>
-                  {chatMessages.length === 1 ? (
+                  {chatMessages.length === 0 ? (
                     <section className="chat-hero">
                       <div className="chat-hero-copy">
                         <div className="chat-hero-badge">Hot desk</div>
