@@ -1187,14 +1187,14 @@ export default function App() {
                                   <select 
                                     className="micro-pill" 
                                     style={{ border: 'none', appearance: 'none', cursor: 'pointer', outline: 'none', paddingRight: '20px', background: 'rgba(255, 255, 255, 0.2) url("data:image/svg+xml;utf8,<svg fill=%27black%27 height=%2724%27 viewBox=%270 0 24 24%27 width=%2724%27 xmlns=%27http://www.w3.org/2000/svg%27><path d=%27M7 10l5 5 5-5z%27/><path d=%27M0 0h24v24H0z%27 fill=%27none%27/></svg>") no-repeat right 4px center/14px 14px', color: 'inherit' }}
-                                    value={doc.tag && tags.includes(doc.tag) ? doc.tag : "Uncategorized"}
+                                    value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
                                     onChange={(e) => {
-                                      if (e.target.value !== doc.tag) {
+                                      if (e.target.value !== (doc.tag || "")) {
                                         void handleUpdateTag(doc.filename, e.target.value);
                                       }
                                     }}
                                   >
-                                    <option value="Uncategorized">Uncategorized</option>
+                                    <option value="">Uncategorized</option>
                                     {tags.map(t => (
                                       <option key={t} value={t}>{t}</option>
                                     ))}
