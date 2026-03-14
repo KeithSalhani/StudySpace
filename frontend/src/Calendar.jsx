@@ -7,13 +7,9 @@ export default function Calendar({ events = [], topics = [] }) {
   const [academicYearStart, setAcademicYearStart] = useState("2025-08-04");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Initialize activeTopics when topics change
+  // Initialize/sync activeTopics whenever topics change
   useEffect(() => {
-    setActiveTopics(prev => {
-      const next = new Set(prev);
-      topics.forEach(t => next.add(t));
-      return next;
-    });
+    setActiveTopics(new Set(topics));
   }, [topics]);
 
   const toggleTopic = (topic) => {
