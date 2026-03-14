@@ -81,10 +81,18 @@ export default function Calendar({ events = [], topics = [] }) {
       dateObj.setFullYear(startYear + 1);
     }
 
+    const yr = dateObj.getFullYear();
+    const mo = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dy = String(dateObj.getDate()).padStart(2, '0');
+    
+    // Store as a local-time ISO-like string (no trailing 'Z') 
+    // so that later uses of new Date(e.date) with local getters keep the same day.
+    const localIsoDateTime = `${yr}-${mo}-${dy}T00:00:00`;
+
     return {
       ...e,
       originalDate: e.date,
-      date: dateObj.toISOString()
+      date: localIsoDateTime
     };
   });
 
