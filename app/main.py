@@ -667,7 +667,7 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
         raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
 
 class DocumentTagRequest(BaseModel):
-    tag: str
+    tag: Optional[str] = None
 
 @app.put("/documents/{filename}/tag")
 async def update_document_tag(filename: str, request: DocumentTagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
@@ -676,12 +676,21 @@ async def update_document_tag(filename: str, request: DocumentTagRequest, curren
         # Check if doc exists
         _get_owned_document_metadata(current_user.username, filename)
         
-        # Add tag if it doesn't exist
-        db.add_tag(current_user.username, request.tag)
+        # Normalize and validate tag
+        raw_tag = request.tag if request.tag is not None else ""
+        normalized_tag = raw_tag.strip()
+        
+        # Treat reserved/sentinel values as "no tag"
+        if normalized_tag.lower() == "uncategorized":
+            normalized_tag = ""
 
-        success = vector_store.update_document_tag(current_user.username, filename, request.tag)
+        # Only add non-empty, non-reserved tags to the user's tag list
+        if normalized_tag:
+            db.add_tag(current_user.username, normalized_tag)
+
+        success = vector_store.update_document_tag(current_user.username, filename, normalized_tag)
         if success:
-            return {"message": "Document tag updated successfully", "tag": request.tag}
+            return {"message": "Document tag updated successfully", "tag": normalized_tag}
         else:
             raise HTTPException(status_code=500, detail="Failed to update document tag")
     except HTTPException:
