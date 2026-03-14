@@ -949,13 +949,15 @@ export default function App() {
   }
 
   const visibleUploadJobs = uploadJobs.filter((job) => {
-    if (job.status !== "completed") {
+    const isFinished = job.status === "completed" || job.status === "failed";
+    if (!isFinished) {
       return true;
     }
 
-    const completedAt = Date.parse(job.completed_at || "");
+    const completedAt = Date.parse(job.completed_at || job.updated_at || "");
     if (Number.isNaN(completedAt)) {
-      return true;
+      // If we don't know when it finished, keep it for a bit based on current time
+      return false; // Safest to hide if we don't have a valid time, or we could track local entry time
     }
 
     return Date.now() - completedAt < COMPLETED_UPLOAD_VISIBLE_MS;
@@ -1042,14 +1044,14 @@ export default function App() {
           </div>
         </section>
 
-        <section className="section">
-          <div className="section-head">
-            <div className="section-title">Pipeline</div>
-            <div className="helper-text">{visibleUploadJobs.length} live</div>
-          </div>
-          <div className="stack">
-            {visibleUploadJobs.length ? (
-              visibleUploadJobs.map((job) => (
+        {visibleUploadJobs.length > 0 && (
+          <section className="section" style={{ marginTop: '16px' }}>
+            <div className="section-head">
+              <div className="section-title">Pipeline</div>
+              <div className="helper-text">{visibleUploadJobs.length} live</div>
+            </div>
+            <div className="stack">
+              {visibleUploadJobs.map((job) => (
                 <div key={job.job_id} className={`upload-job status-${job.status}`}>
                   <div className="upload-job-head">
                     <div className="upload-job-file" title={job.filename}>
@@ -1079,12 +1081,10 @@ export default function App() {
                       .join(" • ")}
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="empty-card">Nothing processing right now.</div>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="section">
           <div className="section-head">
