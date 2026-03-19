@@ -50,7 +50,7 @@ def test_add_document(vector_store):
 
 def test_search(vector_store):
     # Setup
-    vector_store.embedding_model.encode.return_value = np.array([0.1, 0.2])
+    vector_store.embedding_model.encode.return_value = np.array([[0.1, 0.2]])
     vector_store.collection.query.return_value = {
         'documents': [['res1']], 
         'metadatas': [[{'meta': 'data', 'doc_id': 'd1', 'chunk_index': 0}]],
@@ -65,9 +65,27 @@ def test_search(vector_store):
     assert len(results) == 1
     assert results[0]['document'] == 'res1'
     vector_store.collection.query.assert_called_once_with(
-        query_embeddings=[0.1],
+        query_embeddings=[[0.1, 0.2]],
         n_results=5,
         where={"owner_username": "alice"}
+    )
+
+
+def test_search_with_tag_filter(vector_store):
+    vector_store.embedding_model.encode.return_value = np.array([[0.1, 0.2]])
+    vector_store.collection.query.return_value = {
+        'documents': [[]],
+        'metadatas': [[]],
+        'distances': [[]],
+        'ids': [[]]
+    }
+
+    vector_store.search("query", owner_username="alice", selected_tags=["Security"])
+
+    vector_store.collection.query.assert_called_once_with(
+        query_embeddings=[[0.1, 0.2]],
+        n_results=5,
+        where={"$and": [{"owner_username": "alice"}, {"tag": "Security"}]}
     )
 
 def test_delete_document(vector_store):

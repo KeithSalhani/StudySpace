@@ -2,8 +2,8 @@
 Vector store module using ChromaDB and sentence transformers
 """
 import logging
-from typing import Any, Dict, List, Optional, Tuple
 import threading
+from typing import Any, Dict, List, Optional, Tuple
 
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -120,12 +120,42 @@ class VectorStore:
             logger.error(f"Error adding document {doc_id}: {str(e)}")
             raise
 
+    def _build_where_filter(
+        self,
+        owner_username: str,
+        selected_files: Optional[List[str]] = None,
+        selected_tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        filters: List[Dict[str, Any]] = [{"owner_username": owner_username}]
+
+        if selected_files:
+            if len(selected_files) == 1:
+                filters.append({"filename": selected_files[0]})
+            else:
+                filters.append({"filename": {"$in": selected_files}})
+
+        cleaned_tags = [
+            tag.strip()
+            for tag in (selected_tags or [])
+            if isinstance(tag, str) and tag.strip() and tag.strip().lower() != "uncategorized"
+        ]
+        if cleaned_tags:
+            if len(cleaned_tags) == 1:
+                filters.append({"tag": cleaned_tags[0]})
+            else:
+                filters.append({"tag": {"$in": cleaned_tags}})
+
+        if len(filters) == 1:
+            return filters[0]
+        return {"$and": filters}
+
     def search(
         self,
         query: str,
         owner_username: str,
         n_results: int = 5,
         selected_files: Optional[List[str]] = None,
+        selected_tags: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for relevant documents
@@ -146,18 +176,12 @@ class VectorStore:
             kwargs = {
                 "query_embeddings": [query_embedding.tolist()],
                 "n_results": n_results,
+                "where": self._build_where_filter(
+                    owner_username=owner_username,
+                    selected_files=selected_files,
+                    selected_tags=selected_tags,
+                ),
             }
-            filters: List[Dict[str, Any]] = [{"owner_username": owner_username}]
-            if selected_files:
-                if len(selected_files) == 1:
-                    filters.append({"filename": selected_files[0]})
-                else:
-                    filters.append({"filename": {"$in": selected_files}})
-
-            if len(filters) == 1:
-                kwargs["where"] = filters[0]
-            else:
-                kwargs["where"] = {"$and": filters}
 
             with self._lock:
                 # Search in collection
