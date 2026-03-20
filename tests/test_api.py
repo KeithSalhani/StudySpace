@@ -63,7 +63,15 @@ def test_chat_endpoint_with_selected_files_scoped_to_user(mock_vector_store, moc
         {"filename": "file1.pdf", "owner_username": "alice"},
         {"filename": "file2.pdf", "owner_username": "alice"},
     ]
-    mock_rag_chat.chat.return_value = ("Test response", [{"source": "test.pdf"}])
+    mock_rag_chat.chat.return_value = {
+        "response": "Test response",
+        "sources": [{"source": "test.pdf"}],
+        "trace": {
+            "generated_queries": [{"id": "q1", "text": "hello"}],
+            "retrieval_runs": [],
+            "fused_results": [],
+        },
+    }
 
     payload = {
         "message": "Hello",
@@ -73,6 +81,7 @@ def test_chat_endpoint_with_selected_files_scoped_to_user(mock_vector_store, moc
 
     assert response.status_code == 200
     assert response.json()["response"] == "Test response"
+    assert "trace" in response.json()
     mock_rag_chat.chat.assert_called_once_with("Hello", "alice", ["file1.pdf", "file2.pdf"])
 
 
