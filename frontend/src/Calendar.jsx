@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Calendar.css'; // We will create this file for specific calendar styles
 
-export default function Calendar({ events = [], topics = [] }) {
+export default function Calendar({ events = [], topics = [], accessibility = {} }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activeTopics, setActiveTopics] = useState(new Set(topics));
   const [academicYearStart, setAcademicYearStart] = useState("2025-08-04");
@@ -151,10 +151,10 @@ export default function Calendar({ events = [], topics = [] }) {
   }
 
   return (
-    <div className="fc-container">
+    <div className="fc-container" data-high-contrast={accessibility.highContrast ? "true" : "false"}>
       {/* Sidebar - Hidden on mobile by default or moved to top */}
-      <div className={`fc-sidebar glass-panel ${sidebarOpen ? 'open' : ''}`}>
-        <button className="fc-create-btn small-button primary" type="button">
+      <div id="calendar-sidebar" className={`fc-sidebar glass-panel ${sidebarOpen ? 'open' : ''}`}>
+        <button className="fc-create-btn small-button primary" type="button" aria-label="Create calendar item" disabled>
           <span className="plus-icon">+</span> Create
         </button>
 
@@ -168,7 +168,7 @@ export default function Calendar({ events = [], topics = [] }) {
               const isCurr = d > 0 && d <= daysInMonth;
               const isTod = isCurr && new Date().toDateString() === new Date(year, month, d).toDateString();
               return (
-                <div key={i} className={`fc-mini-day ${isCurr ? '' : 'muted'} ${isTod ? 'today' : ''}`}>
+                <div key={i} className={`fc-mini-day ${isCurr ? '' : 'muted'} ${isTod ? 'today' : ''}`} aria-hidden="true">
                   {isCurr ? d : ''}
                 </div>
               );
@@ -214,16 +214,19 @@ export default function Calendar({ events = [], topics = [] }) {
             <button 
               className="icon-button mobile-only" 
               onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-expanded={sidebarOpen}
+              aria-controls="calendar-sidebar"
+              aria-label={sidebarOpen ? "Hide calendar filters" : "Show calendar filters"}
               style={{ marginRight: '8px' }}
             >
               ☰
             </button>
             <button className="small-button" onClick={setToday}>Today</button>
             <div className="fc-nav-arrows">
-              <button className="icon-button" onClick={prevMonth}>&lt;</button>
-              <button className="icon-button" onClick={nextMonth}>&gt;</button>
+              <button className="icon-button" onClick={prevMonth} aria-label="Previous month">&lt;</button>
+              <button className="icon-button" onClick={nextMonth} aria-label="Next month">&gt;</button>
             </div>
-            <h2 className="fc-title">{monthNames[month]} {year}</h2>
+            <h2 className="fc-title" aria-live="polite">{monthNames[month]} {year}</h2>
           </div>
         </div>
 
@@ -247,13 +250,19 @@ export default function Calendar({ events = [], topics = [] }) {
                     <span>{weekNum}</span>
                   </div>
                   {week.map((day, dIdx) => (
-                    <div key={dIdx} className={`fc-day-cell ${day.isCurrentMonth ? '' : 'fc-day-other-month'}`}>
+                    <div
+                      key={dIdx}
+                      className={`fc-day-cell ${day.isCurrentMonth ? '' : 'fc-day-other-month'}`}
+                      role="gridcell"
+                      aria-selected={day.isToday}
+                      aria-label={`${day.date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}${day.events.length ? `. ${day.events.length} events.` : ". No events."}`}
+                    >
                       <div className={`fc-day-number ${day.isToday ? 'fc-day-today' : ''}`}>
                         {day.dayNumber === 1 && day.isCurrentMonth ? `${monthNames[day.date.getMonth()].slice(0,3)} 1` : (day.dayNumber === 1 ? `${monthNames[day.date.getMonth()].slice(0,3)} 1` : day.dayNumber)}
                       </div>
                       <div className="fc-day-events">
                         {day.events.map((evt, idx) => (
-                          <div key={idx} className={`fc-event ${getTopicColorClass(evt.topic)}`} title={evt.title}>
+                          <div key={idx} className={`fc-event ${getTopicColorClass(evt.topic)}`} title={evt.title} aria-label={`${evt.title}, ${evt.topic}`}>
                             {evt.title}
                           </div>
                         ))}

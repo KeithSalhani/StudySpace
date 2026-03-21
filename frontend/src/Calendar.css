@@ -29,6 +29,11 @@
   box-shadow: var(--shadow-soft);
 }
 
+.fc-create-btn[disabled] {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
 .plus-icon {
   font-size: 1.4rem;
   font-weight: 300;
@@ -129,6 +134,14 @@
   flex-direction: column;
   overflow: hidden;
   height: 100%;
+}
+
+.fc-container[data-high-contrast="true"] .fc-day-cell,
+.fc-container[data-high-contrast="true"] .fc-weekday,
+.fc-container[data-high-contrast="true"] .fc-week-number,
+.fc-container[data-high-contrast="true"] .fc-sidebar-item,
+.fc-container[data-high-contrast="true"] .fc-agenda-item {
+  border-color: color-mix(in srgb, var(--text) 22%, var(--border) 78%);
 }
 
 .fc-header {
@@ -452,4 +465,3 @@ body.dark-mode .fc-grid-wrapper {
     display: flex !important;
   }
 }
-
