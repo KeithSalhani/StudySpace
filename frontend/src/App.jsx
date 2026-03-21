@@ -87,6 +87,26 @@ function dedupeSources(sources = []) {
   });
 }
 
+function formatDistance(distance) {
+  if (typeof distance !== "number" || Number.isNaN(distance)) {
+    return null;
+  }
+
+  return `Distance ${distance.toFixed(3)}`;
+}
+
+function formatTraceTiming(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}s`;
+  }
+
+  return `${Math.round(value)}ms`;
+}
+
 function MessageContent({ message }) {
   if (message.type === "user") {
     return <div className="message-body">{message.content}</div>;
@@ -103,6 +123,189 @@ function MessageContent({ message }) {
         {message.content}
       </ReactMarkdown>
     </div>
+  );
+}
+
+function RetrievalTrace({ message }) {
+  const trace = message.trace;
+  const [activeStep, setActiveStep] = useState(0);
+
+  useEffect(() => {
+    if (message.status !== "running") {
+      setActiveStep(0);
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setActiveStep((current) => (current + 1) % 3);
+    }, 1200);
+
+    return () => window.clearInterval(intervalId);
+  }, [message.status]);
+
+  if (message.status === "running") {
+    const pendingSteps = [
+      "Generating 3 search angles",
+      "Retrieving across your study material",
+      "Fusing evidence into one answer"
+    ];
+
+    return (
+      <div className="retrieval-trace pending">
+        <div className="source-list-label">Search plan</div>
+        <div className="trace-progress">
+          {pendingSteps.map((step, index) => (
+            <div
+              key={step}
+              className={`trace-progress-step ${index === activeStep ? "active" : ""}`}
+            >
+              {step}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!trace) {
+    return null;
+  }
+
+  const queryCount = trace.generated_queries?.length || 0;
+  const fusedResults = Array.isArray(trace.fused_results) ? trace.fused_results : [];
+  const retrievalRuns = Array.isArray(trace.retrieval_runs) ? trace.retrieval_runs : [];
+  const summary = trace.summary || {};
+  const timings = trace.timings_ms || {};
+
+  return (
+    <div className="retrieval-trace">
+      <div className="trace-head">
+        <div className="source-list-label">Search breakdown</div>
+        <div className="trace-pill-row">
+          <span className="chat-status-pill">{queryCount} queries</span>
+          <span className="chat-status-pill">{summary.passages_used || fusedResults.length} passages</span>
+          <span className="chat-status-pill">{summary.documents_considered || 0} docs</span>
+          {formatTraceTiming(timings.total) ? (
+            <span className="chat-status-pill">{formatTraceTiming(timings.total)}</span>
+          ) : null}
+        </div>
+      </div>
+
+      <details className="trace-details">
+        <summary>How I searched</summary>
+        <div className="trace-section">
+          <div className="trace-query-grid">
+            {(trace.generated_queries || []).map((query) => (
+              <article key={query.id} className="trace-query-card">
+                <div className="trace-query-top">
+                  <div className="trace-query-id">{query.id?.toUpperCase() || "Q"}</div>
+                  {query.module_tag ? (
+                    <span className="micro-pill">Module {query.module_tag}</span>
+                  ) : null}
+                </div>
+                <div className="trace-query-text">{query.text}</div>
+                {query.goal ? <div className="meta-text">{query.goal}</div> : null}
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="trace-section">
+          <div className="trace-section-title">Retrieved by query</div>
+          <div className="trace-run-list">
+            {retrievalRuns.map((run) => (
+              <section key={run.query_id} className="trace-run-card">
+                <div className="trace-run-head">
+                  <div>
+                    <div className="trace-run-label">{run.query_id?.toUpperCase() || "Query"}</div>
+                    <div className="trace-run-query">{run.query}</div>
+                  </div>
+                  {run.module_tag ? <span className="micro-pill">{run.module_tag}</span> : null}
+                </div>
+                {Array.isArray(run.results) && run.results.length ? (
+                  <div className="trace-result-list">
+                    {run.results.map((result) => (
+                      <article key={result.id} className={`trace-result-card ${result.kept_in_fusion ? "kept" : ""}`}>
+                        <div className="trace-result-top">
+                          <div className="trace-result-file">{result.filename}</div>
+                          <div className="trace-result-meta">
+                            <span>Chunk {typeof result.chunk_index === "number" ? result.chunk_index + 1 : "?"}</span>
+                            {formatDistance(result.distance) ? <span>{formatDistance(result.distance)}</span> : null}
+                            {result.kept_in_fusion ? <span>Used</span> : <span>Reviewed</span>}
+                          </div>
+                        </div>
+                        {result.snippet ? <div className="trace-result-snippet">{result.snippet}</div> : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-card compact">No passages retrieved for this query.</div>
+                )}
+              </section>
+            ))}
+          </div>
+        </div>
+
+        {fusedResults.length ? (
+          <div className="trace-section">
+            <div className="trace-section-title">Evidence used in the final answer</div>
+            <div className="trace-result-list">
+              {fusedResults.map((result) => (
+                <article key={result.id} className="trace-result-card kept">
+                  <div className="trace-result-top">
+                    <div className="trace-result-file">
+                      {result.source_id ? `${result.source_id} • ` : ""}
+                      {result.filename}
+                    </div>
+                    <div className="trace-result-meta">
+                      <span>Chunk {typeof result.chunk_index === "number" ? result.chunk_index + 1 : "?"}</span>
+                      {result.tag ? <span>{result.tag}</span> : null}
+                      {Array.isArray(result.query_ids) && result.query_ids.length ? (
+                        <span>{result.query_ids.map((queryId) => queryId.toUpperCase()).join(", ")}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  {result.snippet ? <div className="trace-result-snippet">{result.snippet}</div> : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </details>
+    </div>
+  );
+}
+
+function ChatMessageCard({ message }) {
+  const hasSources = dedupeSources(message.sources).length > 0;
+  const showTrace = message.type === "bot";
+  const displayContent =
+    message.type === "bot" && message.status === "running" && !message.content
+      ? "Working through your material..."
+      : message.content;
+
+  return (
+    <article className={`message ${message.type} ${message.status === "running" ? "pending" : ""}`}>
+      <div className="message-sender">{message.type === "user" ? "You" : "Study Space"}</div>
+      <MessageContent message={{ ...message, content: displayContent }} />
+      {showTrace ? <RetrievalTrace message={message} /> : null}
+      {hasSources ? (
+        <div className="sources">
+          <div className="source-list-label">Evidence used</div>
+          <div className="source-pills">
+            {dedupeSources(message.sources).map((source, index) => (
+              <span
+                key={`${message.id}-${source.filename || source.source || index}`}
+                className="source-pill"
+              >
+                {source.source_id ? `${source.source_id} • ` : ""}
+                {source.filename || source.source || "Unknown source"}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -870,6 +1073,7 @@ export default function App() {
     }
 
     const selected = Array.from(selectedFiles);
+    const pendingAssistantId = crypto.randomUUID();
 
     setChatMessages((prev) => [
       ...prev,
@@ -878,6 +1082,14 @@ export default function App() {
         type: "user",
         content: message,
         sources: []
+      },
+      {
+        id: pendingAssistantId,
+        type: "bot",
+        content: "",
+        sources: [],
+        trace: null,
+        status: "running"
       }
     ]);
     setChatInput("");
@@ -887,13 +1099,17 @@ export default function App() {
     try {
       const payload = await sendChatMessage(message, selected);
       setChatMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: "bot",
-          content: payload.response,
-          sources: dedupeSources(payload.sources)
-        }
+        ...prev.map((entry) =>
+          entry.id === pendingAssistantId
+            ? {
+                ...entry,
+                content: payload.response,
+                sources: dedupeSources(payload.sources),
+                trace: payload.trace || null,
+                status: "completed"
+              }
+            : entry
+        )
       ]);
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -901,13 +1117,17 @@ export default function App() {
         return;
       }
       setChatMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          type: "bot",
-          content: `Error: ${error.message}`,
-          sources: []
-        }
+        ...prev.map((entry) =>
+          entry.id === pendingAssistantId
+            ? {
+                ...entry,
+                content: `Error: ${error.message}`,
+                sources: [],
+                trace: null,
+                status: "failed"
+              }
+            : entry
+        )
       ]);
     } finally {
       setIsSending(false);
@@ -1538,27 +1758,7 @@ export default function App() {
                   <div className="chat-body" ref={chatBodyRef}>
                     {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
                     {chatMessages.map((message) => (
-                      <article key={message.id} className={`message ${message.type}`}>
-                        <div className="message-sender">
-                          {message.type === "user" ? "You" : "Study Space"}
-                        </div>
-                        <MessageContent message={message} />
-                        {dedupeSources(message.sources).length ? (
-                          <div className="sources">
-                            <div className="source-list-label">Pulled from</div>
-                            <div className="source-pills">
-                              {dedupeSources(message.sources).map((source, index) => (
-                                <span
-                                  key={`${message.id}-${source.filename || source.source || index}`}
-                                  className="source-pill"
-                                >
-                                  {source.filename || source.source || "Unknown source"}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </article>
+                      <ChatMessageCard key={message.id} message={message} />
                     ))}
                   </div>
 
@@ -1676,27 +1876,7 @@ export default function App() {
                   ) : null}
 
                   {chatMessages.map((message) => (
-                    <article key={message.id} className={`message ${message.type}`}>
-                      <div className="message-sender">
-                        {message.type === "user" ? "You" : "Study Space"}
-                      </div>
-                      <MessageContent message={message} />
-                      {dedupeSources(message.sources).length ? (
-                        <div className="sources">
-                          <div className="source-list-label">Pulled from</div>
-                          <div className="source-pills">
-                            {dedupeSources(message.sources).map((source, index) => (
-                              <span
-                                key={`${message.id}-${source.filename || source.source || index}`}
-                                className="source-pill"
-                              >
-                                {source.filename || source.source || "Unknown source"}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </article>
+                    <ChatMessageCard key={message.id} message={message} />
                   ))}
                 </div>
 
