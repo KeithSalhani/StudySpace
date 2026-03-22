@@ -197,6 +197,7 @@ export default function Calendar({ events = [], topics = [], accessibility = {} 
               <input 
                 type="checkbox" 
                 className="fc-checkbox" 
+                aria-label={`Toggle ${topic} events`}
                 checked={activeTopics.has(topic)}
                 onChange={() => toggleTopic(topic)}
               />
@@ -241,7 +242,7 @@ export default function Calendar({ events = [], topics = [], accessibility = {} 
             ))}
           </div>
 
-          <div className="fc-body">
+          <div className="fc-body" role="grid" aria-label={`${monthNames[month]} ${year} calendar`}>
             {weeks.map((week, wIdx) => {
               const weekNum = getWeekNumber(week[0].date);
               return (

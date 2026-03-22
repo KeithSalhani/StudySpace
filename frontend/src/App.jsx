@@ -930,6 +930,8 @@ export default function App() {
   const seenCompletedJobsRef = useRef(new Set());
   const wasMobileRef = useRef(getViewportState().isMobile);
   const speechRecognitionRef = useRef(null);
+  const speechBaseInputRef = useRef("");
+  const speechCommittedTextRef = useRef("");
 
   function showError(message) {
     setErrorBanner(message);
@@ -1005,6 +1007,13 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!accessibility.voiceInput && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
+    }
+  }, [accessibility.voiceInput]);
 
   useEffect(() => {
     if (!errorBanner) {
@@ -1441,6 +1450,8 @@ export default function App() {
     recognition.onstart = () => {
       setSpeechError("");
       setIsListening(true);
+      speechBaseInputRef.current = chatInput.trim();
+      speechCommittedTextRef.current = "";
       announce("Voice input started.");
     };
 
@@ -1456,12 +1467,28 @@ export default function App() {
     };
 
     recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0]?.transcript || "")
-        .join(" ")
-        .trim();
+      let interimTranscript = "";
+      let committedText = speechCommittedTextRef.current;
 
-      setChatInput(transcript);
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript?.trim() || "";
+
+        if (!transcript) {
+          continue;
+        }
+
+        if (result.isFinal) {
+          committedText = [committedText, transcript].filter(Boolean).join(" ").trim();
+        } else {
+          interimTranscript = [interimTranscript, transcript].filter(Boolean).join(" ").trim();
+        }
+      }
+
+      speechCommittedTextRef.current = committedText;
+      setChatInput(
+        [speechBaseInputRef.current, committedText, interimTranscript].filter(Boolean).join(" ").trim()
+      );
     };
 
     speechRecognitionRef.current = recognition;
