@@ -417,6 +417,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     sources: List[dict]
+    trace: Optional[Dict[str, Any]] = None
 
 
 class AuthRequest(BaseModel):
@@ -619,13 +620,13 @@ async def chat(request: ChatRequest, current_user: AuthenticatedUser = Depends(g
     """Handle chat requests with RAG"""
     try:
         selected_files = _ensure_selected_files_owned(current_user.username, request.selected_files)
-        response, sources = await asyncio.to_thread(
+        payload = await asyncio.to_thread(
             rag_chat.chat,
             request.message,
             current_user.username,
             selected_files,
         )
-        return ChatResponse(response=response, sources=sources)
+        return ChatResponse(**payload)
     except HTTPException:
         raise
     except Exception as e:
