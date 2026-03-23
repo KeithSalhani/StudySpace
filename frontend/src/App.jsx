@@ -27,14 +27,7 @@ import {
 const COMPLETED_UPLOAD_VISIBLE_MS = 4000;
 const MOBILE_BREAKPOINT = 900;
 
-const initialMessages = [
-  {
-    id: crypto.randomUUID(),
-    type: "bot",
-    content: "Your study stack is live. Add documents and start asking questions.",
-    sources: []
-  }
-];
+const initialMessages = [];
 
 const starterQuestions = [
   "Give me a quick summary.",
@@ -358,6 +351,96 @@ function SidebarToggle({ side, open, onClick, mobile = false, label }) {
   );
 }
 
+function SettingsModal({
+  onClose,
+  tags,
+  tagDraft,
+  onTagDraftChange,
+  onAddTag,
+  onDeleteTag
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <div className="modal-head">
+          <div>
+            <div className="chat-title">Settings</div>
+            <div className="header-subtitle">
+              Manage topics, sections, and global workspace preferences.
+            </div>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="modal-body">
+          <section className="section">
+            <div className="section-head">
+              <div className="section-title">Topics</div>
+              <div className="helper-text">{tags.length} active lens{tags.length === 1 ? '' : 'es'}</div>
+            </div>
+            <p className="meta-text" style={{ marginBottom: '16px' }}>
+              Topics act as academic filters for your documents and insights.
+            </p>
+            <div className="tags-wrap" style={{ marginBottom: '20px' }}>
+              {tags.length ? (
+                tags.map((tag) => (
+                  <div key={tag} className="tag-chip">
+                    <span>{tag}</span>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${tag}`}
+                      onClick={() => void onDeleteTag(tag)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-card compact">No topics yet.</div>
+              )}
+            </div>
+            <div className="input-row">
+              <input
+                className="input"
+                value={tagDraft}
+                placeholder="Add a topic lens (e.g. AI, CS101)..."
+                onChange={(event) => onTagDraftChange(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void onAddTag();
+                  }
+                }}
+              />
+              <button
+                className="small-button primary"
+                type="button"
+                onClick={() => void onAddTag()}
+              >
+                Add
+              </button>
+            </div>
+          </section>
+
+          <section className="section" style={{ marginTop: '32px', opacity: 0.6 }}>
+            <div className="section-head">
+              <div className="section-title">Workspace Sections</div>
+              <div className="micro-pill">Coming soon</div>
+            </div>
+            <p className="meta-text">
+              Custom layout sections for your sidebar.
+            </p>
+          </section>
+        </div>
+        <div className="modal-footer" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="small-button primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [theme, setTheme] = useState(
     localStorage.getItem("theme") === "dark" ? "dark" : "light"
@@ -403,6 +486,7 @@ export default function App() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(() => !getViewportState().isMobile);
   const [mobileTab, setMobileTab] = useState("chat");
   const [viewMode, setViewMode] = useState("workspace");
+  const [showSettings, setShowSettings] = useState(false);
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -949,13 +1033,15 @@ export default function App() {
   }
 
   const visibleUploadJobs = uploadJobs.filter((job) => {
-    if (job.status !== "completed") {
+    const isFinished = job.status === "completed" || job.status === "failed";
+    if (!isFinished) {
       return true;
     }
 
-    const completedAt = Date.parse(job.completed_at || "");
+    const completedAt = Date.parse(job.completed_at || job.updated_at || "");
     if (Number.isNaN(completedAt)) {
-      return true;
+      // If we don't know when it finished, keep it for a bit based on current time
+      return false; // Safest to hide if we don't have a valid time, or we could track local entry time
     }
 
     return Date.now() - completedAt < COMPLETED_UPLOAD_VISIBLE_MS;
@@ -985,7 +1071,7 @@ export default function App() {
     const groupedDocuments = {};
     groupedDocuments["Uncategorized"] = [];
     tags.forEach(tag => { groupedDocuments[tag] = []; });
-    
+
     documents.forEach(doc => {
       const tag = doc.tag && tags.includes(doc.tag) ? doc.tag : "Uncategorized";
       if (!groupedDocuments[tag]) {
@@ -1042,14 +1128,14 @@ export default function App() {
           </div>
         </section>
 
-        <section className="section">
-          <div className="section-head">
-            <div className="section-title">Pipeline</div>
-            <div className="helper-text">{visibleUploadJobs.length} live</div>
-          </div>
-          <div className="stack">
-            {visibleUploadJobs.length ? (
-              visibleUploadJobs.map((job) => (
+        {visibleUploadJobs.length > 0 && (
+          <section className="section" style={{ marginTop: '16px' }}>
+            <div className="section-head">
+              <div className="section-title">Pipeline</div>
+              <div className="helper-text">{visibleUploadJobs.length} live</div>
+            </div>
+            <div className="stack">
+              {visibleUploadJobs.map((job) => (
                 <div key={job.job_id} className={`upload-job status-${job.status}`}>
                   <div className="upload-job-head">
                     <div className="upload-job-file" title={job.filename}>
@@ -1079,12 +1165,10 @@ export default function App() {
                       .join(" • ")}
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="empty-card">Nothing processing right now.</div>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="section">
           <div className="section-head">
@@ -1116,8 +1200,8 @@ export default function App() {
                         <div className="tag-insights" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           {meta.assessments.length > 0 && (
                             <div className="insight-group">
-                              <div 
-                                className="insight-label" 
+                              <div
+                                className="insight-label"
                                 style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                                 onClick={() => {
                                   setExpandedAssessments(prev => {
@@ -1184,8 +1268,8 @@ export default function App() {
                                   {doc.filename}
                                 </div>
                                 <div className="document-line">
-                                  <select 
-                                    className="micro-pill" 
+                                  <select
+                                    className="micro-pill"
                                     style={{ border: 'none', appearance: 'none', cursor: 'pointer', outline: 'none', paddingRight: '20px', background: 'rgba(255, 255, 255, 0.2) url("data:image/svg+xml;utf8,<svg fill=%27black%27 height=%2724%27 viewBox=%270 0 24 24%27 width=%2724%27 xmlns=%27http://www.w3.org/2000/svg%27><path d=%27M7 10l5 5 5-5z%27/><path d=%27M0 0h24v24H0z%27 fill=%27none%27/></svg>") no-repeat right 4px center/14px 14px', color: 'inherit' }}
                                     value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
                                     onChange={(e) => {
@@ -1224,51 +1308,6 @@ export default function App() {
             ) : (
               <div className="empty-card">No documents yet. Start by dropping a file.</div>
             )}
-          </div>
-        </section>
-
-        <section className="section">
-          <div className="section-head">
-            <div className="section-title">Topics</div>
-          </div>
-          <div className="tags-wrap">
-            {tags.length ? (
-              tags.map((tag) => (
-                <div key={tag} className="tag-chip">
-                  <span>{tag}</span>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${tag}`}
-                    onClick={() => void handleDeleteTag(tag)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))
-            ) : (
-              <div className="empty-card compact">No topics yet.</div>
-            )}
-          </div>
-          <div className="input-row">
-            <input
-              className="input"
-              value={tagDraft}
-              placeholder="Add a topic lens..."
-              onChange={(event) => setTagDraft(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void handleAddTag();
-                }
-              }}
-            />
-            <button
-              className="small-button primary"
-              type="button"
-              onClick={() => void handleAddTag()}
-            >
-              Add
-            </button>
           </div>
         </section>
 
@@ -1455,6 +1494,9 @@ export default function App() {
           <button className="small-button" type="button" onClick={() => setViewMode(viewMode === "workspace" ? "calendar" : "workspace")}>
             {viewMode === "workspace" ? "Calendar" : "Workspace"}
           </button>
+          <button className="small-button" type="button" onClick={() => setShowSettings(true)}>
+            Settings
+          </button>
           <button className="small-button" type="button" onClick={() => void handleLogout()}>
             {isMobile ? "Exit" : "Log out"}
           </button>
@@ -1470,31 +1512,169 @@ export default function App() {
       </div>
 
       {viewMode === "workspace" ? (
-      <div className="app-frame" style={frameStyle}>
-        {isMobile ? (
-          <main
-            className={`panel glass-panel mobile-main-shell mobile-tab-${mobileTab} ${mobileTab === "chat" ? "mobile-chat-shell" : "mobile-panel-screen"}`}
-          >
-            {mobileTab === "sources" ? (
-              <>
-                <div className="panel-header mobile-panel-header">
-                  <div className="panel-heading">
-                    <div className="panel-title">Sources</div>
-                    <div className="header-subtitle">
-                      Upload material, scope documents, and capture notes.
+        <div className="app-frame" style={frameStyle}>
+          {isMobile ? (
+            <main
+              className={`panel glass-panel mobile-main-shell mobile-tab-${mobileTab} ${mobileTab === "chat" ? "mobile-chat-shell" : "mobile-panel-screen"}`}
+            >
+              {mobileTab === "sources" ? (
+                <>
+                  <div className="panel-header mobile-panel-header">
+                    <div className="panel-heading">
+                      <div className="panel-title">Sources</div>
+                      <div className="header-subtitle">
+                        Upload material, scope documents, and capture notes.
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="panel-body left-body mobile-panel-body">
-                  {renderWorkspaceSections()}
-                </div>
-              </>
-            ) : null}
+                  <div className="panel-body left-body mobile-panel-body">
+                    {renderWorkspaceSections()}
+                  </div>
+                </>
+              ) : null}
 
-            {mobileTab === "chat" ? (
-              <>
-                <div className="chat-body" ref={chatBodyRef}>
+              {mobileTab === "chat" ? (
+                <>
+                  <div className="chat-body" ref={chatBodyRef}>
+                    {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
+                    {chatMessages.map((message) => (
+                      <article key={message.id} className={`message ${message.type}`}>
+                        <div className="message-sender">
+                          {message.type === "user" ? "You" : "Study Space"}
+                        </div>
+                        <MessageContent message={message} />
+                        {dedupeSources(message.sources).length ? (
+                          <div className="sources">
+                            <div className="source-list-label">Pulled from</div>
+                            <div className="source-pills">
+                              {dedupeSources(message.sources).map((source, index) => (
+                                <span
+                                  key={`${message.id}-${source.filename || source.source || index}`}
+                                  className="source-pill"
+                                >
+                                  {source.filename || source.source || "Unknown source"}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="chat-footer mobile-chat-footer">
+                    {isSending ? <div className="loading-text">Thinking through your material...</div> : null}
+                    <div className="composer-shell">
+                      <div className="composer">
+                        <textarea
+                          className="textarea composer-input"
+                          rows="1"
+                          placeholder="Ask for a summary, breakdown, challenge question, or study guide..."
+                          value={chatInput}
+                          onChange={(event) => {
+                            setChatInput(event.currentTarget.value);
+                            autoResize(event.currentTarget);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.shiftKey) {
+                              event.preventDefault();
+                              void handleSendMessage();
+                            }
+                          }}
+                        />
+                        <button
+                          className="send-button"
+                          type="button"
+                          onClick={() => void handleSendMessage()}
+                          disabled={isSending}
+                        >
+                          ➜
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              {mobileTab === "studio" ? (
+                <>
+                  <div className="panel-header mobile-panel-header">
+                    <div className="panel-heading">
+                      <div className="panel-title">Studio</div>
+                      <div className="header-subtitle">
+                        Pick a source and launch active study tools.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="panel-body right-body mobile-panel-body">
+                    {renderStudioSections()}
+                  </div>
+                </>
+              ) : null}
+            </main>
+          ) : (
+            <>
+              <aside
+                className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"}`}
+              >
+                <div className="panel glass-panel">
+                  <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: leftSidebarOpen ? 'space-between' : 'center' }}>
+                    {leftSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Workspace</div>}
+                    <SidebarToggle
+                      side="left"
+                      open={leftSidebarOpen}
+                      onClick={() => setLeftSidebarOpen((prev) => !prev)}
+                    />
+                  </div>
+
+                  <div className="side-rail">
+                    <button
+                      className="rail-badge"
+                      type="button"
+                      onClick={() => setLeftSidebarOpen((prev) => !prev)}
+                    >
+                      📚
+                    </button>
+                    <div className="rail-count">{documents.length}</div>
+                    <div className="rail-mini-label">Docs</div>
+                  </div>
+
+                  <div className="panel-body left-body">
+                    {renderWorkspaceSections()}
+                  </div>
+                </div>
+              </aside>
+
+              <main className="panel chat-panel glass-panel">
+                <div className="chat-header">
+                  <div className="chat-header-row">
+                    <div className="panel-title" style={{ margin: 0 }}>Chat</div>
+                  </div>
                   {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
+                </div>
+
+                <div className="chat-body" ref={chatBodyRef}>
+                  {chatMessages.length === 0 ? (
+                    <section className="chat-hero">
+                      <div className="chat-hero-copy">
+                        <div className="chat-hero-badge">Hot desk</div>
+                        <h2>Ask a question</h2>
+                      </div>
+                      <div className="starter-grid">
+                        {starterQuestions.map((question) => (
+                          <button
+                            key={question}
+                            className="starter-card"
+                            type="button"
+                            onClick={() => setChatInput(question)}
+                          >
+                            {question}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
                   {chatMessages.map((message) => (
                     <article key={message.id} className={`message ${message.type}`}>
                       <div className="message-sender">
@@ -1520,7 +1700,7 @@ export default function App() {
                   ))}
                 </div>
 
-                <div className="chat-footer mobile-chat-footer">
+                <div className="chat-footer">
                   {isSending ? <div className="loading-text">Thinking through your material...</div> : null}
                   <div className="composer-shell">
                     <div className="composer">
@@ -1549,189 +1729,43 @@ export default function App() {
                         ➜
                       </button>
                     </div>
-                    <div className={`composer-meta ${isMobile ? "mobile-hidden" : ""}`}>
-                      <span>Enter to send</span>
-                      <span>Shift + Enter for a new line</span>
-                    </div>
                   </div>
                 </div>
-              </>
-            ) : null}
+              </main>
 
-            {mobileTab === "studio" ? (
-              <>
-                <div className="panel-header mobile-panel-header">
-                  <div className="panel-heading">
-                    <div className="panel-title">Studio</div>
-                    <div className="header-subtitle">
-                      Pick a source and launch active study tools.
-                    </div>
+              <aside
+                className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"}`}
+              >
+                <div className="panel glass-panel">
+                  <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: rightSidebarOpen ? 'space-between' : 'center' }}>
+                    {rightSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Studio</div>}
+                    <SidebarToggle
+                      side="right"
+                      open={rightSidebarOpen}
+                      onClick={() => setRightSidebarOpen((prev) => !prev)}
+                    />
                   </div>
-                </div>
-                <div className="panel-body right-body mobile-panel-body">
-                  {renderStudioSections()}
-                </div>
-              </>
-            ) : null}
-          </main>
-        ) : (
-          <>
-            <aside
-              className={`side-panel left-panel ${leftSidebarOpen ? "open" : "collapsed"}`}
-            >
-              <div className="panel glass-panel">
-                <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: leftSidebarOpen ? 'space-between' : 'center' }}>
-                  {leftSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Workspace</div>}
-                  <SidebarToggle
-                    side="left"
-                    open={leftSidebarOpen}
-                    onClick={() => setLeftSidebarOpen((prev) => !prev)}
-                  />
-                </div>
 
-                <div className="side-rail">
-                  <button
-                    className="rail-badge"
-                    type="button"
-                    onClick={() => setLeftSidebarOpen((prev) => !prev)}
-                  >
-                    📚
-                  </button>
-                  <div className="rail-count">{documents.length}</div>
-                  <div className="rail-mini-label">Docs</div>
-                </div>
-
-                <div className="panel-body left-body">
-                  {renderWorkspaceSections()}
-                </div>
-              </div>
-            </aside>
-
-            <main className="panel chat-panel glass-panel">
-          <div className="chat-header">
-            <div className="chat-header-row">
-              <div className="panel-title" style={{ margin: 0 }}>Chat</div>
-            </div>
-            {errorBanner ? <div className="banner error-text">{errorBanner}</div> : null}
-          </div>
-
-          <div className="chat-body" ref={chatBodyRef}>
-            {chatMessages.length === 1 ? (
-              <section className="chat-hero">
-                <div className="chat-hero-copy">
-                  <div className="chat-hero-badge">Hot desk</div>
-                  <h2>Ask a question</h2>
-                </div>
-                <div className="starter-grid">
-                  {starterQuestions.map((question) => (
+                  <div className="side-rail">
                     <button
-                      key={question}
-                      className="starter-card"
+                      className="rail-badge neon"
                       type="button"
-                      onClick={() => setChatInput(question)}
+                      onClick={() => setRightSidebarOpen((prev) => !prev)}
                     >
-                      {question}
+                      ✦
                     </button>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {chatMessages.map((message) => (
-              <article key={message.id} className={`message ${message.type}`}>
-                <div className="message-sender">
-                  {message.type === "user" ? "You" : "Study Space"}
-                </div>
-                <MessageContent message={message} />
-                {dedupeSources(message.sources).length ? (
-                  <div className="sources">
-                    <div className="source-list-label">Pulled from</div>
-                    <div className="source-pills">
-                      {dedupeSources(message.sources).map((source, index) => (
-                        <span
-                          key={`${message.id}-${source.filename || source.source || index}`}
-                          className="source-pill"
-                        >
-                          {source.filename || source.source || "Unknown source"}
-                        </span>
-                      ))}
-                    </div>
+                    <div className="rail-count">{hasStudioSelection ? 1 : 0}</div>
+                    <div className="rail-mini-label">Live</div>
                   </div>
-                ) : null}
-              </article>
-            ))}
-          </div>
 
-          <div className="chat-footer">
-            {isSending ? <div className="loading-text">Thinking through your material...</div> : null}
-            <div className="composer-shell">
-              <div className="composer">
-                <textarea
-                  className="textarea composer-input"
-                  rows="1"
-                  placeholder="Ask for a summary, breakdown, challenge question, or study guide..."
-                  value={chatInput}
-                  onChange={(event) => {
-                    setChatInput(event.currentTarget.value);
-                    autoResize(event.currentTarget);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void handleSendMessage();
-                    }
-                  }}
-                />
-                <button
-                  className="send-button"
-                  type="button"
-                  onClick={() => void handleSendMessage()}
-                  disabled={isSending}
-                >
-                  ➜
-                </button>
-              </div>
-              <div className="composer-meta">
-                <span>Enter to send</span>
-                <span>Shift + Enter for a new line</span>
-              </div>
-            </div>
-          </div>
-            </main>
-
-            <aside
-              className={`side-panel right-panel ${rightSidebarOpen ? "open" : "collapsed"}`}
-            >
-              <div className="panel glass-panel">
-                <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: rightSidebarOpen ? 'space-between' : 'center' }}>
-                  {rightSidebarOpen && <div className="panel-title" style={{ margin: 0 }}>Studio</div>}
-                  <SidebarToggle
-                    side="right"
-                    open={rightSidebarOpen}
-                    onClick={() => setRightSidebarOpen((prev) => !prev)}
-                  />
+                  <div className="panel-body right-body">
+                    {renderStudioSections()}
+                  </div>
                 </div>
-
-                <div className="side-rail">
-                  <button
-                    className="rail-badge neon"
-                    type="button"
-                    onClick={() => setRightSidebarOpen((prev) => !prev)}
-                  >
-                    ✦
-                  </button>
-                  <div className="rail-count">{hasStudioSelection ? 1 : 0}</div>
-                  <div className="rail-mini-label">Live</div>
-                </div>
-
-                <div className="panel-body right-body">
-                  {renderStudioSections()}
-                </div>
-              </div>
-            </aside>
-          </>
-        )}
-      </div>
+              </aside>
+            </>
+          )}
+        </div>
       ) : (
         <div className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
           <Calendar events={calendarEvents} topics={allTopics} />
@@ -1802,6 +1836,17 @@ export default function App() {
               side: "front"
             }))
           }
+        />
+      ) : null}
+
+      {showSettings ? (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          tags={tags}
+          tagDraft={tagDraft}
+          onTagDraftChange={(val) => setTagDraft(val)}
+          onAddTag={() => void handleAddTag()}
+          onDeleteTag={(tag) => void handleDeleteTag(tag)}
         />
       ) : null}
 
