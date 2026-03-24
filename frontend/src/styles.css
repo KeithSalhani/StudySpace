@@ -117,14 +117,52 @@ body.a11y-larger-text {
 }
 
 body.a11y-high-contrast {
-  --border: rgba(28, 34, 48, 0.24);
-  --surface-muted: rgba(91, 68, 255, 0.18);
-  --shadow-soft: 0 8px 24px rgba(18, 24, 32, 0.16);
+  --bg: #ffffff;
+  --bg-deep: #f2f4f7;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-muted: #e6eefc;
+  --text: #111827;
+  --text-muted: #374151;
+  --text-soft: #4b5563;
+  --border: rgba(17, 24, 39, 0.45);
+  --accent-soft: rgba(37, 99, 235, 0.2);
+  --danger-soft: rgba(185, 28, 28, 0.18);
+  --shadow-soft: 0 8px 24px rgba(18, 24, 32, 0.08);
 }
 
 body.dark-mode.a11y-high-contrast {
-  --border: rgba(255, 255, 255, 0.18);
-  --surface-muted: rgba(140, 121, 255, 0.3);
+  --bg: #0b1220;
+  --bg-deep: #111827;
+  --panel: #0f172a;
+  --panel-strong: #111827;
+  --surface: #111827;
+  --surface-strong: #172033;
+  --surface-muted: #1e3a5f;
+  --text: #f9fafb;
+  --text-muted: #d1d5db;
+  --text-soft: #cbd5e1;
+  --border: rgba(255, 255, 255, 0.32);
+  --accent-soft: rgba(147, 197, 253, 0.22);
+  --danger-soft: rgba(248, 113, 113, 0.22);
+}
+
+body.a11y-high-contrast .glass-panel,
+body.a11y-high-contrast .chat-hero,
+body.a11y-high-contrast .message.bot,
+body.a11y-high-contrast .document-item,
+body.a11y-high-contrast .upload-job,
+body.a11y-high-contrast .note-card,
+body.a11y-high-contrast .studio-card,
+body.a11y-high-contrast .composer-shell,
+body.a11y-high-contrast .modal,
+body.a11y-high-contrast .tag-group,
+body.a11y-high-contrast .insight-group,
+body.a11y-high-contrast .mobile-tabbar {
+  border-width: 2px;
+  box-shadow: none;
 }
 
 .auth-shell {
@@ -451,6 +489,24 @@ body.a11y-enhanced-focus .flashcard:focus-visible,
 body.a11y-enhanced-focus .settings-toggle input:focus-visible {
   outline-width: 4px;
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-soft) 78%, transparent 22%);
+}
+
+body.a11y-enhanced-focus .theme-toggle,
+body.a11y-enhanced-focus .sidebar-toggle,
+body.a11y-enhanced-focus .icon-button,
+body.a11y-enhanced-focus .small-button,
+body.a11y-enhanced-focus .send-button,
+body.a11y-enhanced-focus .modal-button,
+body.a11y-enhanced-focus .modal-close,
+body.a11y-enhanced-focus .starter-card,
+body.a11y-enhanced-focus .studio-card,
+body.a11y-enhanced-focus .rail-badge,
+body.a11y-enhanced-focus .upload-zone,
+body.a11y-enhanced-focus .mobile-tab,
+body.a11y-enhanced-focus .composer-shell,
+body.a11y-enhanced-focus .document-item,
+body.a11y-enhanced-focus .settings-toggle {
+  border-width: 2px;
 }
 
 .theme-toggle {

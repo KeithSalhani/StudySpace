@@ -84,6 +84,54 @@ function getSpeechRecognitionConstructor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+function getVoiceInputAvailability() {
+  const SpeechRecognition = getSpeechRecognitionConstructor();
+
+  if (!SpeechRecognition) {
+    return {
+      supported: false,
+      reason: "This browser does not provide built-in speech recognition."
+    };
+  }
+
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return {
+      supported: false,
+      reason: "Voice input requires a secure context such as localhost or HTTPS."
+    };
+  }
+
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return {
+      supported: false,
+      reason: "Voice input needs an internet connection for browser speech recognition."
+    };
+  }
+
+  return {
+    supported: true,
+    reason: ""
+  };
+}
+
+function getSpeechErrorMessage(errorCode) {
+  switch (errorCode) {
+    case "network":
+      return "Voice input could not reach the browser speech service. Check your internet connection, microphone permission, and try Chrome or Edge.";
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Microphone access was blocked. Allow microphone permission in the browser and try again.";
+    case "audio-capture":
+      return "No working microphone was found. Check your input device and browser microphone selection.";
+    case "no-speech":
+      return "No speech was detected. Try again and speak after the microphone indicator turns on.";
+    case "aborted":
+      return "Voice input was interrupted before transcription finished.";
+    default:
+      return `Voice input failed: ${errorCode}.`;
+  }
+}
+
 function normalizeDocument(doc) {
   if (typeof doc === "string") {
     return { filename: doc, tag: null };
@@ -702,7 +750,7 @@ function SettingsModal({
   onDeleteTag,
   accessibility,
   onToggleAccessibility,
-  voiceInputSupported
+  voiceInputStatus
 }) {
   const dialogRef = useDialog(true, onClose);
 
@@ -793,19 +841,20 @@ function SettingsModal({
                   <div className="settings-toggle-title">Voice input for chat</div>
                   <div className="meta-text">
                     Show a microphone in the composer and convert speech to text.
-                    {!voiceInputSupported ? " This browser does not currently support it." : ""}
+                    {!voiceInputStatus.supported ? ` ${voiceInputStatus.reason}` : ""}
                   </div>
                 </div>
                 <input
                   type="checkbox"
                   checked={accessibility.voiceInput}
+                  disabled={!voiceInputStatus.supported}
                   onChange={() => onToggleAccessibility("voiceInput")}
                 />
               </label>
               <label className="settings-toggle">
                 <div>
                   <div className="settings-toggle-title">Enhanced focus indicators</div>
-                  <div className="meta-text">Use stronger focus rings across controls and navigation.</div>
+                  <div className="meta-text">Use stronger outlines and control separation so keyboard focus stands out immediately.</div>
                 </div>
                 <input
                   type="checkbox"
@@ -827,7 +876,7 @@ function SettingsModal({
               <label className="settings-toggle">
                 <div>
                   <div className="settings-toggle-title">Higher contrast surfaces</div>
-                  <div className="meta-text">Boost separation between cards, panels, and controls.</div>
+                  <div className="meta-text">Use darker borders, brighter surfaces, and stronger text contrast across the workspace.</div>
                 </div>
                 <input
                   type="checkbox"
@@ -1448,14 +1497,15 @@ export default function App() {
       return;
     }
 
-    const SpeechRecognition = getSpeechRecognitionConstructor();
-    if (!SpeechRecognition) {
-      const message = "Voice input is not supported in this browser.";
+    const availability = getVoiceInputAvailability();
+    if (!availability.supported) {
+      const message = availability.reason;
       setSpeechError(message);
       announce(message);
       return;
     }
 
+    const SpeechRecognition = getSpeechRecognitionConstructor();
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.interimResults = true;
@@ -1470,7 +1520,7 @@ export default function App() {
     };
 
     recognition.onerror = (event) => {
-      const message = `Voice input error: ${event.error}.`;
+      const message = getSpeechErrorMessage(event.error);
       setSpeechError(message);
       setIsListening(false);
       announce(message);
@@ -1669,7 +1719,7 @@ export default function App() {
     };
   const mobileTabTitle =
     mobileTab === "sources" ? "Sources" : mobileTab === "studio" ? "Studio" : "Chat";
-  const voiceInputSupported = Boolean(getSpeechRecognitionConstructor());
+  const voiceInputStatus = getVoiceInputAvailability();
 
   function renderWorkspaceSections() {
     const groupedDocuments = {};
@@ -2204,7 +2254,7 @@ export default function App() {
                         >
                           ➜
                         </button>
-                        {accessibility.voiceInput && voiceInputSupported ? (
+                        {accessibility.voiceInput && voiceInputStatus.supported ? (
                           <button
                             className={`send-button voice-button ${isListening ? "listening" : ""}`}
                             type="button"
@@ -2336,7 +2386,7 @@ export default function App() {
                       >
                         ➜
                       </button>
-                      {accessibility.voiceInput && voiceInputSupported ? (
+                      {accessibility.voiceInput && voiceInputStatus.supported ? (
                         <button
                           className={`send-button voice-button ${isListening ? "listening" : ""}`}
                           type="button"
@@ -2472,7 +2522,7 @@ export default function App() {
           onDeleteTag={(tag) => void handleDeleteTag(tag)}
           accessibility={accessibility}
           onToggleAccessibility={handleToggleAccessibility}
-          voiceInputSupported={voiceInputSupported}
+          voiceInputStatus={voiceInputStatus}
         />
       ) : null}
 
