@@ -701,7 +701,8 @@ function SettingsModal({
   onAddTag,
   onDeleteTag,
   accessibility,
-  onToggleAccessibility
+  onToggleAccessibility,
+  voiceInputSupported
 }) {
   const dialogRef = useDialog(true, onClose);
 
@@ -790,7 +791,10 @@ function SettingsModal({
               <label className="settings-toggle">
                 <div>
                   <div className="settings-toggle-title">Voice input for chat</div>
-                  <div className="meta-text">Show a microphone in the composer and convert speech to text.</div>
+                  <div className="meta-text">
+                    Show a microphone in the composer and convert speech to text.
+                    {!voiceInputSupported ? " This browser does not currently support it." : ""}
+                  </div>
                 </div>
                 <input
                   type="checkbox"
@@ -962,6 +966,10 @@ export default function App() {
     setTagDraft("");
     setNoteDraft("");
     setErrorBanner("");
+    setSpeechError("");
+    setLiveRegionMessage("");
+    setIsListening(false);
+    speechRecognitionRef.current?.stop();
     setFlashcardState({
       open: false,
       loading: false,
@@ -1012,6 +1020,7 @@ export default function App() {
     if (!accessibility.voiceInput && speechRecognitionRef.current) {
       speechRecognitionRef.current.stop();
       setIsListening(false);
+      setSpeechError("");
     }
   }, [accessibility.voiceInput]);
 
@@ -1352,6 +1361,11 @@ export default function App() {
     const message = chatInput.trim();
     if (!message || isSending) {
       return;
+    }
+
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
     }
 
     const selected = Array.from(selectedFiles);
@@ -2458,6 +2472,7 @@ export default function App() {
           onDeleteTag={(tag) => void handleDeleteTag(tag)}
           accessibility={accessibility}
           onToggleAccessibility={handleToggleAccessibility}
+          voiceInputSupported={voiceInputSupported}
         />
       ) : null}
 
