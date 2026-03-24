@@ -206,6 +206,11 @@ function formatTraceTiming(value) {
 
 function useDialog(open, onClose) {
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open || !dialogRef.current) {
@@ -221,7 +226,7 @@ function useDialog(open, onClose) {
     function handleKeyDown(event) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current?.();
         return;
       }
 
@@ -274,7 +279,7 @@ function useDialog(open, onClose) {
         previousActiveElement.focus();
       }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return dialogRef;
 }
