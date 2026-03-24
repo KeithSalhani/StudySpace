@@ -761,6 +761,7 @@ body.dark-mode .studio-hero {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
   min-width: 0;
 }
 
@@ -786,6 +787,32 @@ body.dark-mode .studio-hero {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.document-tag-select {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 12rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+  padding: 8px 32px 8px 12px;
+  background: var(--surface-strong)
+    url("data:image/svg+xml;utf8,<svg fill=%27black%27 height=%2724%27 viewBox=%270 0 24 24%27 width=%2724%27 xmlns=%27http://www.w3.org/2000/svg%27><path d=%27M7 10l5 5 5-5z%27/><path d=%27M0 0h24v24H0z%27 fill=%27none%27/></svg>")
+    no-repeat right 4px center/14px 14px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.document-tag-select option {
+  background: var(--surface-strong);
+  color: var(--text);
 }
 
 .pill,
