@@ -58,6 +58,38 @@ export function getDocuments() {
   return request("/documents");
 }
 
+export function getFolders() {
+  return request("/folders");
+}
+
+export function createFolder(name) {
+  return request("/folders", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ name })
+  });
+}
+
+export function getExamFolders() {
+  return request("/exam-folders");
+}
+
+export function createExamFolder(name) {
+  return request("/exam-folders", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ name })
+  });
+}
+
+export function getExamPapers() {
+  return request("/exam-papers");
+}
+
 export function deleteDocument(filename) {
   return request(`/documents/${encodeURIComponent(filename)}`, {
     method: "DELETE"
@@ -74,18 +106,60 @@ export function updateDocumentTag(filename, tag) {
   });
 }
 
+export function updateDocumentFolder(filename, folderId) {
+  return request(`/documents/${encodeURIComponent(filename)}/folder`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ folder_id: folderId || null })
+  });
+}
+
+export function moveExamPaper(documentId, folderId) {
+  return request(`/exam-papers/${encodeURIComponent(documentId)}/folder`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ folder_id: folderId })
+  });
+}
+
 export function getUploadJobs(limit = 50) {
   return request(`/upload-jobs?limit=${limit}`);
 }
 
-export function uploadDocument(file) {
+export function uploadDocument(file, folderId = null) {
   const formData = new FormData();
   formData.append("file", file);
+  if (folderId) {
+    formData.append("folder_id", folderId);
+  }
 
   return request("/upload", {
     method: "POST",
     body: formData
   });
+}
+
+export function getDocumentFileUrl(filename) {
+  return `/documents/${encodeURIComponent(filename)}/file`;
+}
+
+export function uploadExamPaper(file, folderId) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("folder_id", folderId);
+
+  return request("/exam-papers/upload", {
+    method: "POST",
+    body: formData
+  });
+}
+
+export function getExamPaperFileUrl(documentId) {
+  return `/exam-papers/${encodeURIComponent(documentId)}/file`;
 }
 
 export function sendChatMessage(message, selectedFiles) {
