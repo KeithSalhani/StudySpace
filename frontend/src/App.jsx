@@ -175,7 +175,9 @@ function dedupeSources(sources = []) {
 
   return sources.filter((source) => {
     const label = (source?.filename || source?.source || "Unknown source").trim();
-    const key = label.toLowerCase();
+    const kind = source?.source_type || "chunk";
+    const sourceId = source?.source_id || "";
+    const key = `${sourceId}|${kind}|${label.toLowerCase()}`;
     if (seen.has(key)) {
       return false;
     }
@@ -359,6 +361,7 @@ function RetrievalTrace({ message }) {
   const queryCount = trace.generated_queries?.length || 0;
   const fusedResults = Array.isArray(trace.fused_results) ? trace.fused_results : [];
   const retrievalRuns = Array.isArray(trace.retrieval_runs) ? trace.retrieval_runs : [];
+  const fullDocumentFetches = Array.isArray(trace.full_document_fetches) ? trace.full_document_fetches : [];
   const summary = trace.summary || {};
   const timings = trace.timings_ms || {};
 
@@ -431,7 +434,31 @@ function RetrievalTrace({ message }) {
           </div>
         </div>
 
-        {fusedResults.length ? (
+        {fullDocumentFetches.length ? (
+          <div className="trace-section">
+            <div className="trace-section-title">Full document fallback</div>
+            <div className="trace-result-list">
+              {fullDocumentFetches.map((item) => (
+                <article key={item.source_id || item.filename} className="trace-result-card kept">
+                  <div className="trace-result-top">
+                    <div className="trace-result-file">
+                      {item.source_id ? `${item.source_id} • ` : ""}
+                      {item.filename}
+                    </div>
+                    <div className="trace-result-meta">
+                      <span>Full document</span>
+                      {item.tag ? <span>{item.tag}</span> : null}
+                      {item.source ? <span>{item.source}</span> : null}
+                    </div>
+                  </div>
+                  {item.reason ? <div className="trace-result-snippet">{item.reason}</div> : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {fusedResults.length || fullDocumentFetches.length ? (
           <div className="trace-section">
             <div className="trace-section-title">Evidence used in the final answer</div>
             <div className="trace-result-list">
@@ -451,6 +478,21 @@ function RetrievalTrace({ message }) {
                     </div>
                   </div>
                   {result.snippet ? <div className="trace-result-snippet">{result.snippet}</div> : null}
+                </article>
+              ))}
+              {fullDocumentFetches.map((item) => (
+                <article key={`full-${item.source_id || item.filename}`} className="trace-result-card kept">
+                  <div className="trace-result-top">
+                    <div className="trace-result-file">
+                      {item.source_id ? `${item.source_id} • ` : ""}
+                      {item.filename}
+                    </div>
+                    <div className="trace-result-meta">
+                      <span>Full document</span>
+                      {item.tag ? <span>{item.tag}</span> : null}
+                    </div>
+                  </div>
+                  {item.reason ? <div className="trace-result-snippet">{item.reason}</div> : null}
                 </article>
               ))}
             </div>
