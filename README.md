@@ -154,9 +154,17 @@ All workspace routes require an authenticated session.
 Useful commands:
 
 ```bash
-./venv/bin/python -m pytest tests/test_db.py tests/test_vector_store.py tests/test_api.py
+./venv/bin/python -m pytest tests
+./venv/bin/python -m coverage erase
+./venv/bin/python -m coverage run --source=app -m pytest tests
+./venv/bin/python -m coverage report -m
 cd frontend && npm run build
 ```
+
+Notes:
+
+- Use `--source=app` when running coverage so the report is limited to the application code and avoids errors from synthetic modules created by some dependencies.
+- If you want coverage for only the app code total, the last line of `coverage report -m` shows the overall percentage.
 
 ## Notes
 

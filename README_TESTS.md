@@ -1,6 +1,6 @@
 # StudySpace Testing Guide
 
-This document outlines the testing infrastructure for the StudySpace project. The project uses `pytest` for unit and integration testing.
+This document outlines the testing infrastructure for the StudySpace project. The project uses `pytest` for unit and integration testing, and `coverage.py` for line coverage reporting.
 
 ## Test Structure
 
@@ -19,7 +19,7 @@ The tests are located in the `tests/` directory and mirror the application struc
 Ensure you have the required test dependencies installed (these are in addition to the main `requirements.txt`):
 
 ```bash
-pip install pytest
+pip install pytest coverage
 ```
 
 ### Execution
@@ -27,10 +27,25 @@ pip install pytest
 To run the full test suite, execute the following command from the project root:
 
 ```bash
-python -m pytest tests/
+./venv/bin/python -m pytest tests
 ```
 
 *Note: Using `python -m pytest` ensures that the current directory is added to the Python path, preventing import errors.*
+
+### Coverage
+
+To measure application coverage only, run:
+
+```bash
+./venv/bin/python -m coverage erase
+./venv/bin/python -m coverage run --source=app -m pytest tests
+./venv/bin/python -m coverage report -m
+```
+
+Why `--source=app` matters:
+
+- It limits coverage reporting to the project application code.
+- It avoids report failures caused by synthetic or dependency-generated modules that do not exist as normal source files.
 
 ## Test Descriptions
 
@@ -71,4 +86,3 @@ Verifies that:
 ## Continuous Integration
 
 These tests should be run before any commit to ensure no regressions are introduced.
-
