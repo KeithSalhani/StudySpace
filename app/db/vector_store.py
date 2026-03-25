@@ -279,7 +279,7 @@ class VectorStore:
         context = "\n\n".join(context_parts)
         return context, sources
 
-    def list_documents(self, owner_username: str) -> List[Dict[str, str]]:
+    def list_documents(self, owner_username: str) -> List[Dict[str, Any]]:
         """List unique documents and their tags."""
         with self._lock:
             unique_docs = {}
@@ -292,7 +292,12 @@ class VectorStore:
                 if filename not in unique_docs:
                     unique_docs[filename] = {
                         "filename": filename,
-                        "tag": metadata.get("tag") or "Uncategorized"
+                        "tag": metadata.get("tag") or "Uncategorized",
+                        "folder_id": metadata.get("folder_id"),
+                        "folder_name": metadata.get("folder_name"),
+                        "content_type": "application/pdf"
+                        if str(filename).lower().endswith(".pdf")
+                        else "application/octet-stream",
                     }
             return list(unique_docs.values())
 
@@ -408,6 +413,49 @@ class VectorStore:
 
         except Exception as e:
             logger.error(f"Error updating tag for document {filename}: {str(e)}")
+            return False
+
+    def update_document_folder(
+        self,
+        owner_username: str,
+        filename: str,
+        folder_id: Optional[str],
+        folder_name: Optional[str],
+    ) -> bool:
+        """Update folder metadata for all chunks of a specific document."""
+        try:
+            with self._lock:
+                doc_ids_to_update = []
+                for doc_id, doc_data in self.documents.items():
+                    metadata = doc_data.get("metadata", {})
+                    if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
+                        doc_ids_to_update.append((doc_id, metadata, doc_data["chunks"]))
+
+                if not doc_ids_to_update:
+                    return False
+
+                for doc_id, metadata, num_chunks in doc_ids_to_update:
+                    metadata["folder_id"] = folder_id
+                    metadata["folder_name"] = folder_name
+
+                    ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
+                    metadatas = []
+                    for i in range(num_chunks):
+                        chunk_meta = metadata.copy()
+                        chunk_meta.update({
+                            "doc_id": doc_id,
+                            "chunk_index": i,
+                            "total_chunks": num_chunks,
+                        })
+                        metadatas.append(chunk_meta)
+
+                    self.collection.update(ids=ids, metadatas=metadatas)
+
+                logger.info("Updated folder for document %s", filename)
+                return True
+
+        except Exception as e:
+            logger.error(f"Error updating folder for document {filename}: {str(e)}")
             return False
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:

@@ -17,8 +17,8 @@ import threading
 import time
 import uuid
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -87,6 +87,12 @@ def _user_processed_dir(username: str) -> Path:
     return path
 
 
+def _user_exam_papers_dir(username: str) -> Path:
+    path = _user_root(username) / "exam_papers"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _set_session_cookie(response: Response, token: str, expires_at: datetime) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -135,6 +141,8 @@ class UploadJob:
     completed_at: Optional[str] = None
     doc_id: Optional[str] = None
     predicted_tag: Optional[str] = None
+    folder_id: Optional[str] = None
+    folder_name: Optional[str] = None
     processing_time_seconds: Optional[float] = None
     error: Optional[str] = None
 
@@ -176,7 +184,14 @@ class UploadJobManager:
         if worker and worker.is_alive():
             worker.join(timeout=timeout)
 
-    def enqueue(self, owner_username: str, filename: str, file_path: Path) -> Dict[str, Any]:
+    def enqueue(
+        self,
+        owner_username: str,
+        filename: str,
+        file_path: Path,
+        folder_id: Optional[str] = None,
+        folder_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
         now, now_ts = self._now()
         job = UploadJob(
             job_id=uuid.uuid4().hex,
@@ -190,6 +205,8 @@ class UploadJobManager:
             updated_at=now,
             created_ts=now_ts,
             updated_ts=now_ts,
+            folder_id=folder_id,
+            folder_name=folder_name,
         )
 
         with self._lock:
@@ -278,6 +295,8 @@ class UploadJobManager:
             owner_username = job.owner_username
             filename = job.filename
             file_path = Path(job.file_path)
+            folder_id = job.folder_id
+            folder_name = job.folder_name
 
         started_at, _ = self._now()
         started = time.perf_counter()
@@ -320,7 +339,19 @@ class UploadJobManager:
 
             self._update_job(job_id, stage="Extracting academic metadata", progress=70)
             extracted_metadata = self.extractor.extract_metadata(content)
-            self.database.set_document_metadata(owner_username, filename, extracted_metadata)
+            self.database.set_document_metadata(
+                owner_username,
+                filename,
+                {
+                    **extracted_metadata,
+                    "filename": filename,
+                    "path": str(file_path),
+                    "processed_path": str(processed_path),
+                    "folder_id": folder_id,
+                    "folder_name": folder_name,
+                    "tag": predicted_tag,
+                },
+            )
 
             self._update_job(job_id, stage="Indexing in vector database", progress=85)
             doc_id = f"{filename}_{uuid.uuid4().hex[:8]}"
@@ -330,6 +361,8 @@ class UploadJobManager:
                 "path": str(file_path),
                 "processed_path": str(processed_path),
                 "tag": predicted_tag,
+                "folder_id": folder_id,
+                "folder_name": folder_name,
             }
             self.store.add_document(doc_id, content, metadata)
 
@@ -450,6 +483,22 @@ class NoteRequest(BaseModel):
     content: str
 
 
+class FolderRequest(BaseModel):
+    name: str
+
+
+class DocumentFolderRequest(BaseModel):
+    folder_id: Optional[str] = None
+
+
+class ExamFolderRequest(BaseModel):
+    name: str
+
+
+class ExamDocumentFolderRequest(BaseModel):
+    folder_id: str
+
+
 class QuizRequest(BaseModel):
     filename: str
     num_questions: int = 5
@@ -471,6 +520,27 @@ def _get_owned_document_metadata(owner_username: str, filename: str) -> Dict[str
     if not metadata:
         raise HTTPException(status_code=404, detail="Document not found")
     return metadata
+
+
+def _get_owned_folder(owner_username: str, folder_id: str) -> Dict[str, Any]:
+    folder = db.get_folder(owner_username, folder_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    return folder
+
+
+def _get_owned_exam_folder(owner_username: str, folder_id: str) -> Dict[str, Any]:
+    folder = db.get_exam_folder(owner_username, folder_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Exam folder not found")
+    return folder
+
+
+def _get_owned_exam_document(owner_username: str, document_id: str) -> Dict[str, Any]:
+    document = db.get_exam_document(owner_username, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Exam paper not found")
+    return document
 
 
 def _ensure_selected_files_owned(
@@ -571,6 +641,7 @@ async def auth_logout(
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...),
+    folder_id: Optional[str] = Form(default=None),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Upload and enqueue a document for background processing"""
@@ -582,11 +653,18 @@ async def upload_document(
     file_path = _user_upload_dir(current_user.username) / storage_name
 
     try:
+        folder = None
+        normalized_folder_id = folder_id.strip() if isinstance(folder_id, str) else None
+        if normalized_folder_id:
+            folder = _get_owned_folder(current_user.username, normalized_folder_id)
+
         await asyncio.to_thread(_save_upload_file, file.file, file_path)
         job = upload_jobs.enqueue(
             owner_username=current_user.username,
             filename=filename,
             file_path=file_path,
+            folder_id=folder["id"] if folder else None,
+            folder_name=folder["name"] if folder else None,
         )
         return {
             "message": f"Document '{filename}' upload accepted",
@@ -642,6 +720,22 @@ async def list_documents(current_user: AuthenticatedUser = Depends(get_current_u
     return {"documents": vector_store.list_documents(current_user.username)}
 
 
+@app.get("/documents/{filename}/file")
+async def get_document_file(filename: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    metadata = _get_owned_document_metadata(current_user.username, filename)
+    file_path = Path(metadata["path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+    media_type = "application/pdf" if filename.lower().endswith(".pdf") else None
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=filename,
+        content_disposition_type="inline",
+    )
+
+
 @app.delete("/documents/{filename}")
 async def delete_document(filename: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a document"""
@@ -673,6 +767,7 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
 class DocumentTagRequest(BaseModel):
     tag: Optional[str] = None
 
+
 @app.put("/documents/{filename}/tag")
 async def update_document_tag(filename: str, request: DocumentTagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Update the tag for a document"""
@@ -701,6 +796,159 @@ async def update_document_tag(filename: str, request: DocumentTagRequest, curren
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating document tag: {str(e)}")
+
+
+@app.put("/documents/{filename}/folder")
+async def update_document_folder(
+    filename: str,
+    request: DocumentFolderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Move a document into or out of a folder."""
+    try:
+        _get_owned_document_metadata(current_user.username, filename)
+        folder = None
+        normalized_folder_id = request.folder_id.strip() if isinstance(request.folder_id, str) else None
+        if normalized_folder_id:
+            folder = _get_owned_folder(current_user.username, normalized_folder_id)
+
+        db.set_document_folder(current_user.username, filename, folder["id"] if folder else None)
+        success = vector_store.update_document_folder(
+            current_user.username,
+            filename,
+            folder["id"] if folder else None,
+            folder["name"] if folder else None,
+        )
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update document folder")
+
+        return {
+            "message": "Document folder updated successfully",
+            "folder_id": folder["id"] if folder else None,
+            "folder_name": folder["name"] if folder else None,
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating document folder: {str(e)}")
+
+
+@app.get("/folders")
+async def list_folders(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {"folders": db.list_folders(current_user.username)}
+
+
+@app.post("/folders", status_code=status.HTTP_201_CREATED)
+async def create_folder(request: FolderRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    try:
+        folder = db.create_folder(current_user.username, request.name)
+        return {"message": "Folder created successfully", "folder": folder}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/exam-folders")
+async def list_exam_folders(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {"folders": db.list_exam_folders(current_user.username)}
+
+
+@app.post("/exam-folders", status_code=status.HTTP_201_CREATED)
+async def create_exam_folder(
+    request: ExamFolderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        folder = db.create_exam_folder(current_user.username, request.name)
+        return {"message": "Exam folder created successfully", "folder": folder}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/exam-papers")
+async def list_exam_papers(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {"documents": db.list_exam_documents(current_user.username)}
+
+
+@app.post("/exam-papers/upload", status_code=status.HTTP_201_CREATED)
+async def upload_exam_paper(
+    file: UploadFile = File(...),
+    folder_id: str = Form(...),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    filename = os.path.basename(file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    folder = _get_owned_exam_folder(current_user.username, folder_id)
+    storage_name = f"{uuid.uuid4().hex}_{filename}"
+    file_path = _user_exam_papers_dir(current_user.username) / storage_name
+
+    try:
+        await asyncio.to_thread(_save_upload_file, file.file, file_path)
+        document = db.add_exam_document(
+            current_user.username,
+            {
+                "id": uuid.uuid4().hex,
+                "filename": filename,
+                "folder_id": folder["id"],
+                "folder_name": folder["name"],
+                "path": str(file_path),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "content_type": "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream",
+            },
+        )
+        return {"message": "Exam paper uploaded successfully", "document": document}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Error uploading exam paper: {str(exc)}")
+    finally:
+        await file.close()
+
+
+@app.put("/exam-papers/{document_id}/folder")
+async def move_exam_paper(
+    document_id: str,
+    request: ExamDocumentFolderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        document = _get_owned_exam_document(current_user.username, document_id)
+        del document
+        updated = db.update_exam_document_folder(current_user.username, document_id, request.folder_id)
+        return {
+            "message": "Exam paper moved successfully",
+            "document": updated,
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/exam-papers/{document_id}/file")
+async def get_exam_paper_file(
+    document_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    document = _get_owned_exam_document(current_user.username, document_id)
+    file_path = Path(document["path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Exam paper file not found")
+
+    media_type = document.get("content_type") or (
+        "application/pdf" if str(document.get("filename", "")).lower().endswith(".pdf") else None
+    )
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=document.get("filename"),
+        content_disposition_type="inline",
+    )
 
 # Tag Endpoints
 @app.get("/tags")

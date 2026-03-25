@@ -28,6 +28,9 @@ class JSONDatabase:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "tags": [],
                 "notes": [],
+                "folders": [],
+                "exam_folders": [],
+                "exam_documents": {},
                 "documents": {},
                 "sessions": [],
             }
@@ -51,6 +54,9 @@ class JSONDatabase:
                 user.setdefault("created_at", datetime.now(timezone.utc).isoformat())
                 user.setdefault("tags", [])
                 user.setdefault("notes", [])
+                user.setdefault("folders", [])
+                user.setdefault("exam_folders", [])
+                user.setdefault("exam_documents", {})
                 user.setdefault("documents", {})
                 user.setdefault("sessions", [])
             return migrated
@@ -187,6 +193,102 @@ class JSONDatabase:
             user = self.data["users"].get(username)
             return list(user.get("notes", [])) if user else []
 
+    def list_folders(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            folders = user.setdefault("folders", [])
+            return sorted(
+                [dict(folder) for folder in folders if isinstance(folder, dict)],
+                key=lambda folder: (folder.get("name") or "").lower(),
+            )
+
+    def get_folder(self, username: str, folder_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            for folder in user.setdefault("folders", []):
+                if folder.get("id") == folder_id:
+                    return dict(folder)
+            return None
+
+    def create_folder(self, username: str, name: str) -> Dict[str, Any]:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Folder name is required")
+
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            folders = user.setdefault("folders", [])
+            if any(
+                isinstance(folder, dict)
+                and (folder.get("name") or "").strip().lower() == normalized_name.lower()
+                for folder in folders
+            ):
+                raise ValueError("Folder already exists")
+
+            folder = {
+                "id": uuid.uuid4().hex,
+                "name": normalized_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            folders.append(folder)
+            self.save()
+            return dict(folder)
+
+    def list_exam_folders(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            folders = user.setdefault("exam_folders", [])
+            return sorted(
+                [dict(folder) for folder in folders if isinstance(folder, dict)],
+                key=lambda folder: (folder.get("name") or "").lower(),
+            )
+
+    def get_exam_folder(self, username: str, folder_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            for folder in user.setdefault("exam_folders", []):
+                if folder.get("id") == folder_id:
+                    return dict(folder)
+            return None
+
+    def create_exam_folder(self, username: str, name: str) -> Dict[str, Any]:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Folder name is required")
+
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            folders = user.setdefault("exam_folders", [])
+            if any(
+                isinstance(folder, dict)
+                and (folder.get("name") or "").strip().lower() == normalized_name.lower()
+                for folder in folders
+            ):
+                raise ValueError("Folder already exists")
+
+            folder = {
+                "id": uuid.uuid4().hex,
+                "name": normalized_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            folders.append(folder)
+            self.save()
+            return dict(folder)
+
     def add_note(self, username: str, content: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             user = self.data["users"].get(username)
@@ -220,8 +322,94 @@ class JSONDatabase:
             if not user:
                 return
             documents = user.setdefault("documents", {})
-            documents[filename] = metadata
+            existing = documents.get(filename, {})
+            next_metadata = dict(existing) if isinstance(existing, dict) else {}
+            next_metadata.update(metadata)
+            documents[filename] = next_metadata
             self.save()
+
+    def set_document_folder(self, username: str, filename: str, folder_id: Optional[str]) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            documents = user.setdefault("documents", {})
+            if filename not in documents:
+                documents[filename] = {}
+
+            folder_name = None
+            normalized_folder_id = folder_id or None
+            if normalized_folder_id:
+                folder = None
+                for item in user.setdefault("folders", []):
+                    if item.get("id") == normalized_folder_id:
+                        folder = item
+                        break
+                if not folder:
+                    raise ValueError("Folder not found")
+                folder_name = folder.get("name")
+
+            next_metadata = dict(documents.get(filename, {}))
+            next_metadata["folder_id"] = normalized_folder_id
+            next_metadata["folder_name"] = folder_name
+            documents[filename] = next_metadata
+            self.save()
+            return dict(next_metadata)
+
+    def list_exam_documents(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            documents = user.setdefault("exam_documents", {})
+            return sorted(
+                [dict(item) for item in documents.values() if isinstance(item, dict)],
+                key=lambda item: ((item.get("folder_name") or "").lower(), (item.get("filename") or "").lower()),
+            )
+
+    def add_exam_document(self, username: str, document: Dict[str, Any]) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+            doc_id = document.get("id") or uuid.uuid4().hex
+            next_document = dict(document)
+            next_document["id"] = doc_id
+            user.setdefault("exam_documents", {})[doc_id] = next_document
+            self.save()
+            return dict(next_document)
+
+    def get_exam_document(self, username: str, document_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            document = user.setdefault("exam_documents", {}).get(document_id)
+            return dict(document) if isinstance(document, dict) else None
+
+    def update_exam_document_folder(self, username: str, document_id: str, folder_id: str) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            document = user.setdefault("exam_documents", {}).get(document_id)
+            if not isinstance(document, dict):
+                raise ValueError("Exam document not found")
+
+            folder = None
+            for item in user.setdefault("exam_folders", []):
+                if item.get("id") == folder_id:
+                    folder = item
+                    break
+            if not folder:
+                raise ValueError("Folder not found")
+
+            document["folder_id"] = folder["id"]
+            document["folder_name"] = folder["name"]
+            self.save()
+            return dict(document)
 
     def delete_document_metadata(self, username: str, filename: str) -> bool:
         with self._lock:

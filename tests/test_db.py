@@ -58,6 +58,30 @@ def test_notes_are_scoped_per_user(db):
     assert db.delete_note("bob", note["id"]) is False
 
 
+def test_folders_are_scoped_per_user(db):
+    db.create_user("alice", "hash-a", "salt-a")
+    db.create_user("bob", "hash-b", "salt-b")
+
+    folder = db.create_folder("alice", "Networks")
+
+    assert folder["name"] == "Networks"
+    assert len(db.list_folders("alice")) == 1
+    assert db.list_folders("bob") == []
+    assert db.get_folder("alice", folder["id"])["name"] == "Networks"
+
+
+def test_document_folder_assignment_is_persisted(db):
+    db.create_user("alice", "hash", "salt")
+    folder = db.create_folder("alice", "Past Papers")
+
+    db.set_document_metadata("alice", "exam.pdf", {"assessments": []})
+    updated = db.set_document_folder("alice", "exam.pdf", folder["id"])
+
+    assert updated["folder_id"] == folder["id"]
+    assert updated["folder_name"] == "Past Papers"
+    assert db.get_all_metadata("alice")["exam.pdf"]["folder_name"] == "Past Papers"
+
+
 def test_sessions_are_scoped_to_user(db):
     db.create_user("alice", "hash-a", "salt-a")
 
