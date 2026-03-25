@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Calendar from "./Calendar";
+import TopicMinerWorkspace from "./TopicMinerWorkspace";
 import {
   createNote,
   createTag,
@@ -1042,6 +1043,7 @@ export default function App() {
   const [liveRegionMessage, setLiveRegionMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState("");
+  const [topicMinerOpen, setTopicMinerOpen] = useState(true);
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -1083,6 +1085,7 @@ export default function App() {
     setSpeechError("");
     setLiveRegionMessage("");
     setIsListening(false);
+    setTopicMinerOpen(true);
     speechRecognitionRef.current?.stop();
     setFlashcardState({
       open: false,
@@ -2158,6 +2161,14 @@ export default function App() {
             </div>
           </button>
         </section>
+
+        <TopicMinerWorkspace
+          documents={documents}
+          selectedDocument={selectedDocument}
+          setSelectedDocument={setSelectedDocument}
+          open={topicMinerOpen}
+          onToggle={() => setTopicMinerOpen((prev) => !prev)}
+        />
       </div>
     );
   }

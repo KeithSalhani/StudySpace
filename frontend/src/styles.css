@@ -1551,6 +1551,153 @@ body.dark-mode .message.bot {
   background: rgba(22, 215, 165, 0.18);
 }
 
+.topic-miner-card {
+  background:
+    linear-gradient(135deg, rgba(91, 68, 255, 0.14), rgba(22, 215, 165, 0.08)),
+    var(--surface);
+}
+
+.topic-miner-card.active {
+  border-color: rgba(91, 68, 255, 0.35);
+}
+
+.topic-miner-shell {
+  gap: 14px;
+}
+
+.topic-miner-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.topic-miner-hero {
+  background: linear-gradient(135deg, #eef0ff, #eefaf5);
+}
+
+body.dark-mode .topic-miner-hero {
+  background: linear-gradient(135deg, #25284c, #1d3f39);
+}
+
+.topic-miner-grid,
+.topic-miner-result-grid,
+.topic-miner-readiness {
+  display: grid;
+  gap: 14px;
+}
+
+.topic-miner-grid,
+.topic-miner-readiness,
+.topic-miner-result-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.topic-miner-panel,
+.topic-miner-results,
+.topic-miner-stat,
+.topic-miner-result-card,
+.topic-miner-list-item,
+.topic-miner-step {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.topic-miner-panel,
+.topic-miner-results {
+  border-radius: 24px;
+  padding: 16px;
+}
+
+.topic-miner-panel-head,
+.topic-miner-results-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.topic-miner-title,
+.topic-miner-result-title,
+.topic-miner-step-title,
+.topic-miner-list-title,
+.topic-miner-stat-value {
+  color: var(--text);
+}
+
+.topic-miner-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.topic-miner-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-miner-field span,
+.topic-miner-stat-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.topic-miner-readiness {
+  margin-top: 14px;
+}
+
+.topic-miner-stat,
+.topic-miner-result-card,
+.topic-miner-step,
+.topic-miner-list-item {
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.topic-miner-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-miner-stat-value {
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.topic-miner-list,
+.topic-miner-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.topic-miner-list-item,
+.topic-miner-step {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topic-miner-step-index {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
 .insight-group {
   display: flex;
   flex-direction: column;
@@ -1939,6 +2086,12 @@ body.dark-mode .message.bot {
     gap: 10px;
   }
 
+  .topic-miner-grid,
+  .topic-miner-readiness,
+  .topic-miner-result-grid {
+    grid-template-columns: 1fr;
+  }
+
   .upload-zone,
   .empty-card,
   .document-item,
@@ -1946,6 +2099,12 @@ body.dark-mode .message.bot {
   .tag-chip,
   .note-card,
   .studio-card,
+  .topic-miner-panel,
+  .topic-miner-results,
+  .topic-miner-stat,
+  .topic-miner-result-card,
+  .topic-miner-list-item,
+  .topic-miner-step,
   .composer-shell,
   .banner {
     box-shadow: none;
@@ -1963,7 +2122,13 @@ body.dark-mode .message.bot {
 
   .upload-job,
   .note-card,
-  .studio-card {
+  .studio-card,
+  .topic-miner-panel,
+  .topic-miner-results,
+  .topic-miner-stat,
+  .topic-miner-result-card,
+  .topic-miner-list-item,
+  .topic-miner-step {
     padding: 12px;
     border-radius: 18px;
   }
