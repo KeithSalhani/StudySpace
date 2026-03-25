@@ -2,6 +2,7 @@
 Vector store module using ChromaDB and sentence transformers
 """
 import logging
+import os
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -316,6 +317,58 @@ class VectorStore:
                 metadata = doc_data.get("metadata", {})
                 if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
                     return dict(metadata)
+        return None
+
+    def get_full_document_content(self, owner_username: str, filename: str) -> Optional[Dict[str, Any]]:
+        """
+        Return the full processed content for a document when available.
+
+        Falls back to reconstructing the document from stored chunks if the
+        processed markdown file is unavailable.
+        """
+        with self._lock:
+            matches: List[Tuple[str, Dict[str, Any]]] = []
+            for doc_id, doc_data in self.documents.items():
+                metadata = doc_data.get("metadata", {})
+                if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
+                    matches.append((doc_id, dict(metadata)))
+
+        if not matches:
+            return None
+
+        for _doc_id, metadata in matches:
+            processed_path = metadata.get("processed_path")
+            if processed_path and os.path.exists(processed_path):
+                with open(processed_path, "r", encoding="utf-8") as handle:
+                    return {
+                        "filename": filename,
+                        "tag": metadata.get("tag"),
+                        "content": handle.read(),
+                        "source": "processed_markdown",
+                    }
+
+        for doc_id, metadata in matches:
+            with self._lock:
+                result = self.collection.get(where={"doc_id": doc_id}, include=["documents", "metadatas"])
+
+            documents = result.get("documents") or []
+            metadatas = result.get("metadatas") or []
+            if not documents:
+                continue
+
+            ordered_chunks = sorted(
+                zip(metadatas, documents),
+                key=lambda item: (item[0] or {}).get("chunk_index", 0),
+            )
+            content = "\n\n".join(chunk for _meta, chunk in ordered_chunks if chunk)
+            if content.strip():
+                return {
+                    "filename": filename,
+                    "tag": metadata.get("tag"),
+                    "content": content,
+                    "source": "reconstructed_chunks",
+                }
+
         return None
 
     def update_document_tag(self, owner_username: str, filename: str, new_tag: str) -> bool:

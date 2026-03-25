@@ -21,6 +21,7 @@ class RAGChat:
     SEARCH_RESULTS_PER_QUERY = 4
     FUSED_RESULTS_LIMIT = 6
     RRF_K = 60
+    FULL_DOCUMENT_FETCH_LIMIT = 2
 
     def __init__(self, vector_store: VectorStore, api_key: str = None):
         """
@@ -77,18 +78,18 @@ class RAGChat:
             retrieval_ms = round((time.perf_counter() - retrieval_started) * 1000, 1)
 
             generation_started = time.perf_counter()
-            prompt = self._create_prompt(message, fused_results)
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=prompt,
+            response_payload = self._generate_response_with_document_fallback(
+                message=message,
+                owner_username=owner_username,
+                fused_results=fused_results,
             )
             generation_ms = round((time.perf_counter() - generation_started) * 1000, 1)
 
-            if not response.text:
-                raise ValueError("Empty response from Gemini")
-
             total_ms = round((time.perf_counter() - total_started) * 1000, 1)
-            sources = self._build_source_summary(fused_results)
+            sources = self._build_source_summary(
+                fused_results,
+                full_document_sources=response_payload["full_document_sources"],
+            )
 
             trace = {
                 "original_question": message,
@@ -104,6 +105,7 @@ class RAGChat:
                 ],
                 "retrieval_runs": retrieval_runs,
                 "fused_results": fused_results,
+                "full_document_fetches": response_payload["full_document_fetches"],
                 "selected_files": selected_files or [],
                 "available_tags": available_tags,
                 "model": self.model_id,
@@ -127,7 +129,7 @@ class RAGChat:
             }
 
             return {
-                "response": response.text,
+                "response": response_payload["response"],
                 "sources": sources,
                 "trace": trace,
             }
@@ -423,8 +425,12 @@ User question: {message}
 
         return fused_results
 
-    def _build_source_summary(self, fused_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [
+    def _build_source_summary(
+        self,
+        fused_results: List[Dict[str, Any]],
+        full_document_sources: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        chunk_sources = [
             {
                 "source_id": item["source_id"],
                 "doc_id": item.get("doc_id"),
@@ -435,6 +441,173 @@ User question: {message}
             }
             for item in fused_results
         ]
+        return chunk_sources + list(full_document_sources or [])
+
+    def _generate_response_with_document_fallback(
+        self,
+        message: str,
+        owner_username: str,
+        fused_results: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        answer_plan = self._assess_retrieved_evidence(message, fused_results)
+
+        full_document_sources: List[Dict[str, Any]] = []
+        full_document_fetches: List[Dict[str, Any]] = []
+
+        requested_filenames = answer_plan.get("full_document_filenames") or []
+        if answer_plan.get("needs_full_documents") and requested_filenames:
+            for index, filename in enumerate(requested_filenames[: self.FULL_DOCUMENT_FETCH_LIMIT], start=1):
+                document_payload = self.vector_store.get_full_document_content(owner_username, filename)
+                if not document_payload or not (document_payload.get("content") or "").strip():
+                    continue
+
+                source_id = f"F{index}"
+                full_document_sources.append(
+                    {
+                        "source_id": source_id,
+                        "doc_id": None,
+                        "filename": filename,
+                        "chunk_index": None,
+                        "distance": None,
+                        "tag": document_payload.get("tag"),
+                        "source_type": "full_document",
+                    }
+                )
+                full_document_fetches.append(
+                    {
+                        "source_id": source_id,
+                        "filename": filename,
+                        "tag": document_payload.get("tag"),
+                        "source": document_payload.get("source"),
+                        "reason": answer_plan.get("missing_information"),
+                    }
+                )
+
+        if full_document_sources:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=self._create_augmented_prompt(message, fused_results, full_document_sources, owner_username),
+            )
+            if not response.text:
+                raise ValueError("Empty response from Gemini")
+            return {
+                "response": response.text,
+                "full_document_sources": full_document_sources,
+                "full_document_fetches": full_document_fetches,
+            }
+
+        if answer_plan.get("answer"):
+            return {
+                "response": answer_plan["answer"],
+                "full_document_sources": [],
+                "full_document_fetches": [],
+            }
+
+        response = self.client.models.generate_content(
+            model=self.model_id,
+            contents=self._create_prompt(message, fused_results),
+        )
+        if not response.text:
+            raise ValueError("Empty response from Gemini")
+        return {
+            "response": response.text,
+            "full_document_sources": [],
+            "full_document_fetches": [],
+        }
+
+    def _assess_retrieved_evidence(
+        self,
+        message: str,
+        fused_results: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        evidence_context = self._build_evidence_context(fused_results)
+        candidate_filenames = sorted(
+            {
+                item.get("filename")
+                for item in fused_results
+                if item.get("filename")
+            }
+        )
+
+        prompt = f"""You are evaluating retrieval quality for a RAG answer.
+Use the retrieved chunk evidence to draft the best answer you can.
+
+Then decide whether the answer is still incomplete in a way that is likely resolvable by reading the full source document.
+
+Return JSON with this exact shape:
+{{
+  "answer": "string",
+  "needs_full_documents": true,
+  "full_document_filenames": ["exact filename"],
+  "missing_information": "short reason"
+}}
+
+Rules:
+- `full_document_filenames` must contain only exact filenames from the allowed list.
+- Request full documents only when the current chunks are insufficient and the missing details are likely in the same source document.
+- Prefer at most {self.FULL_DOCUMENT_FETCH_LIMIT} filenames.
+- If the current chunks are enough, set `needs_full_documents` to false and `full_document_filenames` to [].
+
+Allowed filenames: {", ".join(candidate_filenames) or "None"}
+
+Retrieved evidence:
+{evidence_context or "None"}
+
+User question:
+{message}
+"""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+                config={"response_mime_type": "application/json"},
+            )
+            payload = json.loads(response.text or "{}")
+            return self._normalize_answer_plan(payload, candidate_filenames)
+        except Exception as exc:
+            logger.warning("Falling back to direct answer generation: %s", exc)
+            return {
+                "answer": "",
+                "needs_full_documents": False,
+                "full_document_filenames": [],
+                "missing_information": "",
+            }
+
+    def _normalize_answer_plan(
+        self,
+        payload: Any,
+        candidate_filenames: List[str],
+    ) -> Dict[str, Any]:
+        normalized = {
+            "answer": "",
+            "needs_full_documents": False,
+            "full_document_filenames": [],
+            "missing_information": "",
+        }
+        if not isinstance(payload, dict):
+            return normalized
+
+        answer = payload.get("answer")
+        if isinstance(answer, str):
+            normalized["answer"] = answer.strip()
+
+        missing_information = payload.get("missing_information")
+        if isinstance(missing_information, str):
+            normalized["missing_information"] = missing_information.strip()
+
+        allowed_lookup = {filename.lower(): filename for filename in candidate_filenames}
+        requested_files: List[str] = []
+        for item in payload.get("full_document_filenames") or []:
+            if not isinstance(item, str):
+                continue
+            match = allowed_lookup.get(item.strip().lower())
+            if match and match not in requested_files:
+                requested_files.append(match)
+
+        normalized["full_document_filenames"] = requested_files[: self.FULL_DOCUMENT_FETCH_LIMIT]
+        normalized["needs_full_documents"] = bool(payload.get("needs_full_documents")) and bool(requested_files)
+        return normalized
 
     def _create_prompt(self, message: str, fused_results: List[Dict[str, Any]]) -> str:
         evidence_context = self._build_evidence_context(fused_results)
@@ -463,6 +636,53 @@ User question:
 {message}
 
 Answer helpfully, but clearly note that the uploaded documents did not provide direct supporting evidence."""
+
+    def _create_augmented_prompt(
+        self,
+        message: str,
+        fused_results: List[Dict[str, Any]],
+        full_document_sources: List[Dict[str, Any]],
+        owner_username: str,
+    ) -> str:
+        chunk_evidence = self._build_evidence_context(fused_results)
+
+        document_parts = []
+        for source in full_document_sources:
+            filename = source.get("filename")
+            if not filename:
+                continue
+            document_payload = self.vector_store.get_full_document_content(owner_username, filename)
+            if not document_payload:
+                continue
+
+            header_bits = [source["source_id"], filename, "full document"]
+            if source.get("tag"):
+                header_bits.append(f"module {source['tag']}")
+            document_parts.append(
+                f"[{' | '.join(header_bits)}]\n{(document_payload.get('content') or '').strip()}"
+            )
+
+        full_document_context = "\n\n".join(document_parts)
+
+        return f"""You are a helpful AI assistant for students studying academic modules.
+Answer the user's question using the retrieved chunk evidence and the full-document context.
+
+Rules:
+- Use the full-document context when it fills gaps left by the retrieved chunks.
+- Cite chunk evidence ids inline like [S1].
+- Cite full-document evidence ids inline like [F1].
+- If information is still missing, say so clearly.
+- Keep the answer clear, concise, and useful.
+
+Retrieved chunk evidence:
+{chunk_evidence or "None"}
+
+Full-document context:
+{full_document_context or "None"}
+
+User question:
+{message}
+"""
 
     def _build_evidence_context(self, fused_results: List[Dict[str, Any]]) -> str:
         parts = []
