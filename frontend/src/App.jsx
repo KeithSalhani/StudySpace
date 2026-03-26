@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Calendar from "./Calendar";
@@ -1051,9 +1051,9 @@ export default function App() {
   const speechBaseInputRef = useRef("");
   const speechCommittedTextRef = useRef("");
 
-  function showError(message) {
+  const showError = useCallback((message) => {
     setErrorBanner(message);
-  }
+  }, []);
 
   function announce(message) {
     if (!message || !accessibility.announceUpdates) {

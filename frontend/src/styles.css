@@ -1623,17 +1623,20 @@ body.dark-mode .message.bot {
   flex-shrink: 0;
   padding: 20px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
+  flex-wrap: wrap;
 }
 
 .topic-miner-back-container {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1 1 220px;
 }
 
 .topic-miner-head-actions,
@@ -1641,6 +1644,12 @@ body.dark-mode .message.bot {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-papers-actions {
+  justify-content: flex-end;
+  flex: 1 1 220px;
 }
 
 .topic-miner-sidebar-title,
@@ -1740,15 +1749,33 @@ body.dark-mode .message.bot {
   padding: 14px;
   border-radius: 20px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  text-align: left;
+}
+
+.topic-miner-folder-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
   text-align: left;
 }
 
 .topic-miner-folder-item.active {
   border-color: rgba(91, 68, 255, 0.35);
   background: color-mix(in srgb, var(--surface-strong) 82%, var(--accent-soft) 18%);
+}
+
+.topic-miner-folder-analysis-copy {
+  margin-top: 6px;
 }
 
 .topic-miner-chevron {
@@ -1820,6 +1847,32 @@ body.dark-mode .message.bot {
   width: 100%;
 }
 
+.topic-miner-analysis-status-card {
+  margin: 0 16px 16px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-strong) 84%, var(--accent-soft) 16%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-analysis-status-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.topic-miner-analysis-status-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .topic-miner-preview-panel {
   border-radius: 30px;
   min-height: 0;
@@ -1835,6 +1888,108 @@ body.dark-mode .message.bot {
   flex: 0 0 86px;
   min-width: 86px;
   max-width: 86px;
+}
+
+.topic-miner-analysis-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.topic-miner-analysis-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.topic-miner-analysis-stat,
+.topic-miner-observation-card,
+.topic-miner-theme-card,
+.topic-miner-subtopic-card,
+.topic-miner-example-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.topic-miner-analysis-stat {
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-miner-analysis-stat strong {
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+}
+
+.topic-miner-observations,
+.topic-miner-theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-miner-observation-list,
+.topic-miner-theme-subtopics,
+.topic-miner-example-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.topic-miner-observation-card,
+.topic-miner-example-card {
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.topic-miner-theme-card {
+  border-radius: 22px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.topic-miner-theme-head,
+.topic-miner-subtopic-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topic-miner-theme-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.03em;
+}
+
+.topic-miner-theme-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-subtopic-card {
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-miner-analysis-empty {
+  min-height: 220px;
 }
 
 .topic-miner-preview-frame-wrap {
@@ -2293,6 +2448,28 @@ body.dark-mode .message.bot {
   .topic-miner-preview-panel.collapsed {
     min-width: 0;
     max-width: none;
+  }
+
+  .topic-miner-analysis-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topic-miner-theme-head,
+  .topic-miner-subtopic-head,
+  .topic-miner-analysis-status-card,
+  .topic-miner-folder-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topic-miner-folder-button,
+  .topic-miner-head-actions {
+    width: 100%;
+  }
+
+  .topic-miner-papers-actions .small-button,
+  .topic-miner-analysis-status-actions .small-button {
+    flex: 1 1 100%;
   }
 
   .upload-zone,

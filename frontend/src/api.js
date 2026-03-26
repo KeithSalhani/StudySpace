@@ -86,6 +86,16 @@ export function createExamFolder(name) {
   });
 }
 
+export function analyzeExamFolder(folderId) {
+  return request(`/exam-folders/${encodeURIComponent(folderId)}/analyze`, {
+    method: "POST"
+  });
+}
+
+export function getExamFolderAnalysis(folderId) {
+  return request(`/exam-folders/${encodeURIComponent(folderId)}/analysis`);
+}
+
 export function getExamPapers() {
   return request("/exam-papers");
 }

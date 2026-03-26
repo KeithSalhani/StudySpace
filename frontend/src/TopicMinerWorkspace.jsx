@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  analyzeExamFolder,
   createExamFolder,
+  getExamFolderAnalysis,
   getExamFolders,
   getExamPaperFileUrl,
   getExamPapers,
@@ -16,6 +18,32 @@ function getFolderDocumentCount(folderId, documents) {
   return documents.filter((document) => document.folder_id === folderId).length;
 }
 
+function isAnalysisActive(analysis) {
+  return analysis?.status === "queued" || analysis?.status === "processing";
+}
+
+function getFolderAnalysisMeta(analysis) {
+  if (!analysis) {
+    return "Ready to analyze";
+  }
+
+  if (analysis.status === "queued" || analysis.status === "processing") {
+    const progressLabel = Number.isFinite(analysis.progress) ? `${analysis.progress}%` : "Working";
+    return `${progressLabel} · ${analysis.stage || "Analyzing folder"}`;
+  }
+
+  if (analysis.status === "failed") {
+    return analysis.error || "Analysis failed";
+  }
+
+  if (analysis.status === "completed") {
+    const themeCount = analysis.summary?.theme_count || 0;
+    return analysis.stale ? `Out of date · ${themeCount} themes` : `${themeCount} themes mined`;
+  }
+
+  return analysis.stage || "Ready to analyze";
+}
+
 export default function TopicMinerWorkspace({
   fullScreen = false,
   onOpenWorkspace,
@@ -27,6 +55,7 @@ export default function TopicMinerWorkspace({
   const [examDocuments, setExamDocuments] = useState([]);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState(null);
+  const [selectedFolderAnalysis, setSelectedFolderAnalysis] = useState(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [navView, setNavView] = useState("folders");
@@ -34,6 +63,7 @@ export default function TopicMinerWorkspace({
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [movingDocumentId, setMovingDocumentId] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [analyzingFolderId, setAnalyzingFolderId] = useState("");
 
   async function refreshState() {
     const [foldersPayload, papersPayload] = await Promise.all([
@@ -42,6 +72,25 @@ export default function TopicMinerWorkspace({
     ]);
     setFolders(Array.isArray(foldersPayload.folders) ? foldersPayload.folders : []);
     setExamDocuments(Array.isArray(papersPayload.documents) ? papersPayload.documents : []);
+  }
+
+  async function loadFolderAnalysis(folderId) {
+    if (!folderId) {
+      setSelectedFolderAnalysis(null);
+      return null;
+    }
+
+    try {
+      const payload = await getExamFolderAnalysis(folderId);
+      setSelectedFolderAnalysis(payload);
+      return payload;
+    } catch (error) {
+      if (error?.status === 404) {
+        setSelectedFolderAnalysis(null);
+        return null;
+      }
+      throw error;
+    }
   }
 
   useEffect(() => {
@@ -72,7 +121,7 @@ export default function TopicMinerWorkspace({
     return () => {
       active = false;
     };
-  }, [fullScreen, onError]);
+  }, [fullScreen]);
 
   useEffect(() => {
     if (!fullScreen) {
@@ -99,6 +148,36 @@ export default function TopicMinerWorkspace({
     [folders, selectedFolderId]
   );
 
+  useEffect(() => {
+    if (!fullScreen || !selectedFolderId) {
+      setSelectedFolderAnalysis(null);
+      return;
+    }
+
+    let active = true;
+
+    async function fetchAnalysis() {
+      try {
+        const payload = await loadFolderAnalysis(selectedFolderId);
+        if (!active) {
+          return;
+        }
+        setSelectedFolderAnalysis(payload);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        onError?.(error.message);
+      }
+    }
+
+    void fetchAnalysis();
+
+    return () => {
+      active = false;
+    };
+  }, [fullScreen, onError, selectedFolderId]);
+
   const documentsInSelectedFolder = useMemo(() => {
     if (!selectedFolderId) {
       return [];
@@ -123,6 +202,29 @@ export default function TopicMinerWorkspace({
       documentsInSelectedFolder.find((document) => document.id === selectedDocumentId) || null,
     [documentsInSelectedFolder, selectedDocumentId]
   );
+  const activeFolderAnalysis = selectedFolderAnalysis || selectedFolder?.analysis || null;
+  const activeFolderAnalysisMeta = getFolderAnalysisMeta(activeFolderAnalysis);
+
+  useEffect(() => {
+    if (!fullScreen || !selectedFolderId || !isAnalysisActive(selectedFolderAnalysis)) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void (async () => {
+        try {
+          await refreshState();
+          await loadFolderAnalysis(selectedFolderId);
+        } catch (error) {
+          onError?.(error.message);
+        }
+      })();
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [fullScreen, onError, selectedFolderAnalysis, selectedFolderId]);
 
   const layoutClassName = [
     "topic-miner-layout",
@@ -142,6 +244,7 @@ export default function TopicMinerWorkspace({
       setNewFolderName("");
       await refreshState();
       setSelectedFolderId(payload.folder?.id || null);
+      setSelectedFolderAnalysis(null);
       setSidebarOpen(true);
       setNavView("papers");
     } catch (error) {
@@ -187,20 +290,66 @@ export default function TopicMinerWorkspace({
     }
   }
 
+  async function handleAnalyzeFolder(folderId) {
+    if (!folderId || analyzingFolderId === folderId) {
+      return;
+    }
+
+    try {
+      setAnalyzingFolderId(folderId);
+      setSelectedFolderId(folderId);
+      setSelectedDocumentId(null);
+      setSelectedFolderAnalysis({ status: "queued", stage: "Queuing analysis" });
+      setPreviewOpen(true);
+      setSidebarOpen(true);
+      setNavView("papers");
+      await analyzeExamFolder(folderId);
+      await refreshState();
+      await loadFolderAnalysis(folderId);
+    } catch (error) {
+      if (error?.status === 409) {
+        await refreshState();
+        await loadFolderAnalysis(folderId);
+        return;
+      }
+      onError?.(error.message);
+    } finally {
+      setAnalyzingFolderId("");
+    }
+  }
+
+  function handleOpenAnalysisView(folderId = selectedFolderId) {
+    if (!folderId) {
+      return;
+    }
+
+    setSelectedFolderId(folderId);
+    setSelectedDocumentId(null);
+    setPreviewOpen(true);
+    setSidebarOpen(true);
+    setNavView("papers");
+  }
+
   function handleFolderSelect(folderId) {
     if (selectedFolderId === folderId && navView === "papers") {
       setNavView("folders");
       return;
     }
 
+    if (selectedFolderId !== folderId) {
+      setSelectedFolderAnalysis(null);
+    }
+    
     setSelectedFolderId(folderId);
+    setSelectedDocumentId(null);
     setSidebarOpen(true);
     setNavView("papers");
+    setPreviewOpen(true);
   }
 
   function handleDocumentSelect(documentId) {
     if (selectedDocumentId === documentId && previewOpen) {
-      setPreviewOpen(false);
+      setSelectedDocumentId(null);
       return;
     }
 
@@ -285,7 +434,12 @@ export default function TopicMinerWorkspace({
                       }
                     }}
                   />
-                  <button className="small-button primary" type="button" onClick={() => void handleCreateFolder()}>
+                  <button
+                    className="small-button primary"
+                    type="button"
+                    disabled={!newFolderName.trim() || isCreatingFolder}
+                    onClick={() => void handleCreateFolder()}
+                  >
                     {isCreatingFolder ? "Adding..." : "Add"}
                   </button>
                 </div>
@@ -295,23 +449,40 @@ export default function TopicMinerWorkspace({
                     folders.map((folder) => {
                       const count = getFolderDocumentCount(folder.id, examDocuments);
                       const active = folder.id === selectedFolderId;
+                      const analysis = folder.analysis;
+                      const analyzing = analyzingFolderId === folder.id || isAnalysisActive(analysis);
 
                       return (
-                        <button
+                        <article
                           key={folder.id}
                           className={`topic-miner-folder-item ${active ? "active" : ""}`}
-                          type="button"
-                          onClick={() => handleFolderSelect(folder.id)}
                         >
-                          <div>
-                            <div className="topic-miner-folder-name">{folder.name}</div>
-                            <div className="meta-text">{count} paper{count === 1 ? "" : "s"}</div>
-                          </div>
-                          <div className="topic-miner-folder-actions">
-                            <span className="micro-pill">{count}</span>
-                            <span className="topic-miner-chevron" aria-hidden="true">›</span>
-                          </div>
-                        </button>
+                          <button
+                            className="topic-miner-folder-button"
+                            type="button"
+                            onClick={() => handleFolderSelect(folder.id)}
+                          >
+                            <div>
+                              <div className="topic-miner-folder-name">{folder.name}</div>
+                              <div className="meta-text">{count} paper{count === 1 ? "" : "s"}</div>
+                              <div className="helper-text topic-miner-folder-analysis-copy">
+                                {getFolderAnalysisMeta(analysis)}
+                              </div>
+                            </div>
+                            <div className="topic-miner-folder-actions">
+                              <span className="micro-pill">{count}</span>
+                              <span className="topic-miner-chevron" aria-hidden="true">›</span>
+                            </div>
+                          </button>
+                          <button
+                            className={`small-button ${analysis?.status === "completed" ? "" : "primary"}`}
+                            type="button"
+                            disabled={!count || analyzingFolderId === folder.id || isAnalysisActive(analysis)}
+                            onClick={() => void handleAnalyzeFolder(folder.id)}
+                          >
+                            {analyzing ? "Analyzing..." : analysis?.status === "completed" ? "Re-run" : "Analyze"}
+                          </button>
+                        </article>
                       );
                     })
                   ) : (
@@ -335,7 +506,27 @@ export default function TopicMinerWorkspace({
                           </div>
                         </div>
                       </div>
-                      <div className="topic-miner-head-actions">
+                      <div className="topic-miner-head-actions topic-miner-papers-actions">
+                        <button
+                          className={`small-button ${activeFolderAnalysis?.status === "completed" ? "" : "primary"}`}
+                          type="button"
+                          disabled={!documentsInSelectedFolder.length || analyzingFolderId === selectedFolder.id || isAnalysisActive(activeFolderAnalysis)}
+                          onClick={() => void handleAnalyzeFolder(selectedFolder.id)}
+                        >
+                          {analyzingFolderId === selectedFolder.id || isAnalysisActive(activeFolderAnalysis)
+                            ? "Analyzing..."
+                            : activeFolderAnalysis?.status === "completed"
+                              ? "Re-run analysis"
+                              : "Analyze folder"}
+                        </button>
+                        <button
+                          className="small-button"
+                          type="button"
+                          disabled={!activeFolderAnalysis || (previewOpen && !selectedDocumentId)}
+                          onClick={() => handleOpenAnalysisView(selectedFolder.id)}
+                        >
+                          {previewOpen && !selectedDocumentId ? "Viewing analysis" : "View analysis"}
+                        </button>
                         <button className="small-button" type="button" onClick={() => fileInputRef.current?.click()}>
                           {isUploading ? "..." : "Upload PDF"}
                         </button>
@@ -351,6 +542,28 @@ export default function TopicMinerWorkspace({
                           event.currentTarget.value = "";
                         }}
                       />
+                    </div>
+
+                    <div className="topic-miner-analysis-status-card">
+                      <div>
+                        <div className="topic-miner-analysis-status-title">Topic mining</div>
+                        <div className="helper-text">{activeFolderAnalysisMeta}</div>
+                      </div>
+                      <div className="topic-miner-analysis-status-actions">
+                        {activeFolderAnalysis?.summary?.theme_count ? (
+                          <span className="micro-pill active">
+                            {activeFolderAnalysis.summary.theme_count} themes
+                          </span>
+                        ) : null}
+                        <button
+                          className="small-button"
+                          type="button"
+                          disabled={!activeFolderAnalysis || (previewOpen && !selectedDocumentId)}
+                          onClick={() => handleOpenAnalysisView(selectedFolder.id)}
+                        >
+                          {previewOpen && !selectedDocumentId ? "Viewing" : "Open"}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="topic-miner-paper-list">
@@ -418,72 +631,207 @@ export default function TopicMinerWorkspace({
         </aside>
 
         <main className={`topic-miner-preview-panel ${previewOpen ? "open" : "collapsed"}`}>
-          {previewDocument && previewOpen && isPdfDocument(previewDocument.filename) ? (
-            <>
-              <div className="topic-miner-preview-head">
-                <div>
-                  <div className="topic-miner-preview-title">{previewDocument.filename}</div>
-                  <div className="helper-text">Scroll inside the preview.</div>
-                </div>
-                <button className="small-button" type="button" onClick={() => setPreviewOpen(false)}>
-                  Collapse
-                </button>
-              </div>
-              <div className="topic-miner-preview-frame-wrap">
-                <iframe
-                  className="topic-miner-preview-frame"
-                  title={`${previewDocument.filename} preview`}
-                  src={`${getExamPaperFileUrl(previewDocument.id)}#toolbar=0&navpanes=0&view=FitH`}
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              {previewDocument && previewOpen ? (
-                <div className="topic-miner-preview-empty">
-                  <div className="topic-miner-preview-title">No preview available</div>
-                  <p className="meta-text">This file type might not have a preview.</p>
-                </div>
-              ) : previewDocument && !previewOpen ? (
-                <div className="topic-miner-collapsed-actions">
-                  <button
-                    className="topic-miner-rail-button"
-                    type="button"
-                    aria-label={`Open preview for ${previewDocument.filename}`}
-                    title={`Open preview for ${previewDocument.filename}`}
-                    onClick={() => setPreviewOpen(true)}
-                  >
-                    ⤢
-                  </button>
-                  <div className="meta-text preview-hint">{previewDocument.filename}</div>
-                </div>
-              ) : !previewOpen ? (
-                <div className="topic-miner-collapsed-actions">
-                  <button
-                    className="topic-miner-rail-button"
-                    type="button"
-                    aria-label="Open preview panel"
-                    title="Open preview panel"
-                    onClick={() => setPreviewOpen(true)}
-                  >
-                    ⤢
-                  </button>
-                </div>
+          {previewOpen ? (
+            previewDocument ? (
+              isPdfDocument(previewDocument.filename) ? (
+                <>
+                  <div className="topic-miner-preview-head">
+                    <div>
+                      <div className="topic-miner-preview-title">{previewDocument.filename}</div>
+                      <div className="helper-text">Scroll inside the preview.</div>
+                    </div>
+                    <button className="small-button" type="button" onClick={() => setPreviewOpen(false)}>
+                      Collapse
+                    </button>
+                  </div>
+                  <div className="topic-miner-preview-frame-wrap">
+                    <iframe
+                      className="topic-miner-preview-frame"
+                      title={`${previewDocument.filename} preview`}
+                      src={`${getExamPaperFileUrl(previewDocument.id)}#toolbar=0&navpanes=0&view=FitH`}
+                    />
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="topic-miner-preview-head">
-                    <div />
+                    <div>
+                      <div className="topic-miner-preview-title">{previewDocument.filename}</div>
+                      <div className="helper-text">Preview unavailable for this file type.</div>
+                    </div>
                     <button className="small-button" type="button" onClick={() => setPreviewOpen(false)}>
                       Collapse
                     </button>
                   </div>
                   <div className="topic-miner-preview-empty">
-                    <div className="topic-miner-preview-title">No paper selected</div>
-                    <p className="meta-text">Pick a folder, then choose a PDF to preview it here.</p>
+                    <div className="topic-miner-preview-title">No preview available</div>
+                    <p className="meta-text">This file type might not have an inline preview.</p>
                   </div>
                 </>
-              )}
-            </>
+              )
+            ) : selectedFolder ? (
+              <>
+                <div className="topic-miner-preview-head">
+                  <div>
+                    <div className="topic-miner-preview-title">{selectedFolder.name} topic analysis</div>
+                    <div className="helper-text">{activeFolderAnalysisMeta}</div>
+                  </div>
+                  <div className="topic-miner-head-actions">
+                    <button
+                      className={`small-button ${activeFolderAnalysis?.status === "completed" ? "" : "primary"}`}
+                      type="button"
+                      disabled={!documentsInSelectedFolder.length || analyzingFolderId === selectedFolder.id || isAnalysisActive(activeFolderAnalysis)}
+                      onClick={() => void handleAnalyzeFolder(selectedFolder.id)}
+                    >
+                      {analyzingFolderId === selectedFolder.id || isAnalysisActive(activeFolderAnalysis)
+                        ? "Analyzing..."
+                        : activeFolderAnalysis?.status === "completed"
+                          ? "Re-run analysis"
+                          : "Analyze folder"}
+                    </button>
+                    <button className="small-button" type="button" onClick={() => setPreviewOpen(false)}>
+                      Collapse
+                    </button>
+                  </div>
+                </div>
+
+                <div className="topic-miner-analysis-body">
+                  {activeFolderAnalysis?.status === "failed" ? (
+                    <div className="empty-card topic-miner-analysis-empty">
+                      <div className="topic-miner-preview-title">Analysis failed</div>
+                      <p className="meta-text">{activeFolderAnalysis.error || "Try running the folder again."}</p>
+                    </div>
+                  ) : activeFolderAnalysis?.status === "completed" && activeFolderAnalysis?.result ? (
+                    <>
+                      <div className="topic-miner-analysis-summary-grid">
+                        <article className="topic-miner-analysis-stat">
+                          <span className="meta-text">Papers</span>
+                          <strong>{activeFolderAnalysis.result.summary?.paper_count || 0}</strong>
+                        </article>
+                        <article className="topic-miner-analysis-stat">
+                          <span className="meta-text">Questions</span>
+                          <strong>{activeFolderAnalysis.result.summary?.question_count || 0}</strong>
+                        </article>
+                        <article className="topic-miner-analysis-stat">
+                          <span className="meta-text">Themes</span>
+                          <strong>{activeFolderAnalysis.result.summary?.theme_count || 0}</strong>
+                        </article>
+                        <article className="topic-miner-analysis-stat">
+                          <span className="meta-text">Status</span>
+                          <strong>{activeFolderAnalysis.stale ? "Stale" : "Current"}</strong>
+                        </article>
+                      </div>
+
+                      {activeFolderAnalysis.result.observations?.length ? (
+                        <section className="topic-miner-observations">
+                          <div className="topic-miner-analysis-status-title">Observations</div>
+                          <div className="topic-miner-observation-list">
+                            {activeFolderAnalysis.result.observations.map((note, index) => (
+                              <article key={`${note}-${index}`} className="topic-miner-observation-card">
+                                {note}
+                              </article>
+                            ))}
+                          </div>
+                        </section>
+                      ) : null}
+
+                      <section className="topic-miner-theme-list">
+                        {activeFolderAnalysis.result.themes?.length ? (
+                          activeFolderAnalysis.result.themes.map((theme) => (
+                            <article key={theme.canonical_topic} className="topic-miner-theme-card">
+                              <div className="topic-miner-theme-head">
+                                <div>
+                                  <div className="topic-miner-theme-title">{theme.canonical_topic}</div>
+                                  <div className="helper-text">
+                                    Seen in {theme.frequency?.papers_with_topic || 0}/
+                                    {theme.frequency?.total_papers || 0} papers
+                                  </div>
+                                </div>
+                                <div className="topic-miner-theme-badges">
+                                  {(theme.question_positions || []).map((position) => (
+                                    <span key={`${theme.canonical_topic}-${position}`} className="micro-pill">
+                                      Q{position}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="topic-miner-theme-subtopics">
+                                {(theme.recurring_subtopics || []).map((subtopic) => (
+                                  <article key={`${theme.canonical_topic}-${subtopic.name}`} className="topic-miner-subtopic-card">
+                                    <div className="topic-miner-subtopic-head">
+                                      <div className="topic-miner-analysis-status-title">{subtopic.name}</div>
+                                      <span className="micro-pill active">{subtopic.count}</span>
+                                    </div>
+                                    <div className="topic-miner-example-list">
+                                      {(subtopic.example_questions || []).map((example) => (
+                                        <article
+                                          key={`${subtopic.name}-${example.paper}-${example.question_number}`}
+                                          className="topic-miner-example-card"
+                                        >
+                                          <div className="meta-text">
+                                            {example.paper} · Q{example.question_number}
+                                          </div>
+                                          <div>{example.summary}</div>
+                                        </article>
+                                      ))}
+                                    </div>
+                                  </article>
+                                ))}
+                              </div>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="empty-card topic-miner-analysis-empty">
+                            <div className="topic-miner-preview-title">No recurring topics yet</div>
+                            <p className="meta-text">
+                              The analysis finished, but no stable recurring themes were found.
+                            </p>
+                          </div>
+                        )}
+                      </section>
+                    </>
+                  ) : isAnalysisActive(activeFolderAnalysis) ? (
+                    <div className="empty-card topic-miner-analysis-empty">
+                      <div className="topic-miner-preview-title">Analyzing folder</div>
+                      <p className="meta-text">{activeFolderAnalysisMeta}</p>
+                    </div>
+                  ) : (
+                    <div className="empty-card topic-miner-analysis-empty">
+                      <div className="topic-miner-preview-title">No topic analysis yet</div>
+                      <p className="meta-text">
+                        Run topic mining on this folder to surface recurring exam themes and examples.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="topic-miner-preview-head">
+                  <div />
+                  <button className="small-button" type="button" onClick={() => setPreviewOpen(false)}>
+                    Collapse
+                  </button>
+                </div>
+                <div className="topic-miner-preview-empty">
+                  <div className="topic-miner-preview-title">No folder selected</div>
+                  <p className="meta-text">Pick a folder to preview its papers or analyze recurring topics.</p>
+                </div>
+              </>
+            )
+          ) : (
+            <div className="topic-miner-collapsed-actions">
+              <button
+                className="topic-miner-rail-button"
+                type="button"
+                aria-label="Open main panel"
+                title="Open main panel"
+                onClick={() => setPreviewOpen(true)}
+              >
+                ⤢
+              </button>
+              {previewDocument ? <div className="meta-text preview-hint">{previewDocument.filename}</div> : null}
+            </div>
           )}
         </main>
       </div>
