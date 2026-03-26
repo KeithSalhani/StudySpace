@@ -108,6 +108,56 @@ async def test_create_folder_returns_folder(main_module):
 
 
 @pytest.mark.asyncio
+async def test_analyze_exam_folder_enqueues_topic_mining(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    folder = main_module.app.state.db.create_exam_folder("alice", "Security")
+    main_module.app.state.db.add_exam_document(
+        "alice",
+        {
+            "id": "paper-1",
+            "filename": "security.pdf",
+            "folder_id": folder["id"],
+            "folder_name": folder["name"],
+            "path": "/tmp/security.pdf",
+            "created_at": "2026-03-25T18:00:00+00:00",
+            "content_type": "application/pdf",
+        },
+    )
+
+    response = await main_module.analyze_exam_folder(folder["id"], current_user=user())
+
+    assert response["message"] == "Topic mining started"
+    assert response["job"]["folder_id"] == folder["id"]
+    assert response["analysis"]["status"] == "queued"
+    assert response["analysis"]["summary"]["paper_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_exam_folder_analysis_returns_saved_payload(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    folder = main_module.app.state.db.create_exam_folder("alice", "Networks")
+    main_module.app.state.db.update_exam_folder_analysis(
+        "alice",
+        folder["id"],
+        folder_name=folder["name"],
+        status="completed",
+        stage="Topic mining complete",
+        progress=100,
+        model="gemini-test",
+        pipeline_version="topic-miner-v1",
+        summary={"paper_count": 2, "theme_count": 3, "question_count": 8},
+        result={"themes": [{"canonical_topic": "Network Security"}]},
+        error=None,
+        stale=False,
+    )
+
+    response = await main_module.get_exam_folder_analysis(folder["id"], current_user=user())
+
+    assert response["status"] == "completed"
+    assert response["result"]["themes"][0]["canonical_topic"] == "Network Security"
+
+
+@pytest.mark.asyncio
 async def test_update_document_folder_endpoint(main_module):
     main_module.app.state.db.create_user("alice", "hash", "salt")
     folder = main_module.app.state.db.create_folder("alice", "Networks")

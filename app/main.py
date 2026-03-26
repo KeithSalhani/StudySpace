@@ -48,6 +48,7 @@ from app.core.rag import RAGChat
 from app.core.quiz_generator import QuizGenerator
 from app.core.flashcard_generator import FlashcardGenerator
 from app.core.metadata_extractor import MetadataExtractor
+from app.core.topic_miner import TopicMiner
 from app.db.metadata import JSONDatabase
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 metadata_extractor = MetadataExtractor(GEMINI_API_KEY)
+topic_miner = TopicMiner(doc_processor, GEMINI_API_KEY)
 db = JSONDatabase()
 
 
@@ -144,6 +146,25 @@ class UploadJob:
     folder_id: Optional[str] = None
     folder_name: Optional[str] = None
     processing_time_seconds: Optional[float] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class TopicMiningJob:
+    job_id: str
+    owner_username: str
+    folder_id: str
+    folder_name: str
+    status: str
+    stage: str
+    progress: int
+    created_at: str
+    updated_at: str
+    created_ts: float
+    updated_ts: float
+    total_documents: int
+    model: str
+    completed_at: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -433,16 +454,292 @@ class UploadJobManager:
                     self._pending_order.remove(job_id)
 
 
+class TopicMiningJobManager:
+    def __init__(
+        self,
+        miner: TopicMiner,
+        database: JSONDatabase,
+        max_history: int = 50,
+    ):
+        self.miner = miner
+        self.database = database
+        self.max_history = max_history
+
+        self._jobs: Dict[str, TopicMiningJob] = {}
+        self._pending_order: List[str] = []
+        self._queue: Queue[Optional[str]] = Queue()
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._worker: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._worker and self._worker.is_alive():
+                return
+            self._stop_event.clear()
+            self._worker = threading.Thread(
+                target=self._worker_loop,
+                name="topic-miner-worker",
+                daemon=True,
+            )
+            self._worker.start()
+
+    def stop(self, timeout: float = 10.0) -> None:
+        self._stop_event.set()
+        self._queue.put(None)
+        worker = self._worker
+        if worker and worker.is_alive():
+            worker.join(timeout=timeout)
+
+    def enqueue(
+        self,
+        owner_username: str,
+        folder_id: str,
+        folder_name: str,
+        total_documents: int,
+    ) -> Dict[str, Any]:
+        existing = self.database.get_exam_folder_analysis(owner_username, folder_id)
+        if isinstance(existing, dict) and existing.get("status") in {
+            UploadJobStatus.QUEUED.value,
+            UploadJobStatus.PROCESSING.value,
+        }:
+            raise ValueError("Topic mining is already running for this folder")
+
+        now, now_ts = self._now()
+        job = TopicMiningJob(
+            job_id=uuid.uuid4().hex,
+            owner_username=owner_username,
+            folder_id=folder_id,
+            folder_name=folder_name,
+            status=UploadJobStatus.QUEUED.value,
+            stage="Queued for topic mining",
+            progress=0,
+            created_at=now,
+            updated_at=now,
+            created_ts=now_ts,
+            updated_ts=now_ts,
+            total_documents=total_documents,
+            model=self.miner.model_id,
+        )
+
+        with self._lock:
+            self._jobs[job.job_id] = job
+            self._pending_order.append(job.job_id)
+            self._trim_history_unlocked()
+
+        self.database.update_exam_folder_analysis(
+            owner_username,
+            folder_id,
+            folder_name=folder_name,
+            job_id=job.job_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            completed_at=None,
+            error=None,
+            stale=False,
+            model=self.miner.model_id,
+            pipeline_version=self.miner.pipeline_version,
+            summary={
+                "paper_count": total_documents,
+                "analyzed_paper_count": 0,
+                "theme_count": 0,
+                "question_count": 0,
+            },
+            result=None,
+        )
+        self._queue.put(job.job_id)
+        return self._to_public(job)
+
+    def _worker_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                job_id = self._queue.get(timeout=0.5)
+            except Empty:
+                continue
+
+            if job_id is None:
+                if self._stop_event.is_set():
+                    break
+                continue
+
+            try:
+                self._process_job(job_id)
+            finally:
+                self._queue.task_done()
+
+    def _process_job(self, job_id: str) -> None:
+        job = self._update_job(
+            job_id,
+            status=UploadJobStatus.PROCESSING.value,
+            stage="Preparing exam papers",
+            progress=5,
+        )
+        if not job:
+            return
+
+        self.database.update_exam_folder_analysis(
+            job.owner_username,
+            job.folder_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            error=None,
+            stale=False,
+        )
+
+        documents = [
+            document
+            for document in self.database.list_exam_documents(job.owner_username)
+            if document.get("folder_id") == job.folder_id
+        ]
+        if not documents:
+            self._fail_job(job_id, "No exam papers found in this folder")
+            return
+
+        try:
+            result = self.miner.analyze_folder(
+                job.folder_name,
+                documents,
+                progress_callback=lambda stage, progress: self._update_topic_mining_progress(
+                    job_id,
+                    stage,
+                    progress,
+                ),
+            )
+            now, _ = self._now()
+            completed_job = self._update_job(
+                job_id,
+                status=UploadJobStatus.COMPLETED.value,
+                stage="Topic mining complete",
+                progress=100,
+                completed_at=now,
+                error=None,
+            )
+            if not completed_job:
+                return
+
+            self.database.update_exam_folder_analysis(
+                completed_job.owner_username,
+                completed_job.folder_id,
+                folder_name=completed_job.folder_name,
+                job_id=completed_job.job_id,
+                status=completed_job.status,
+                stage=completed_job.stage,
+                progress=completed_job.progress,
+                completed_at=completed_job.completed_at,
+                error=None,
+                stale=False,
+                model=result.get("model") or self.miner.model_id,
+                pipeline_version=result.get("pipeline_version") or self.miner.pipeline_version,
+                summary=result.get("summary") or {},
+                result=result,
+            )
+        except Exception as exc:
+            logger.error("Topic mining failed for folder %s: %s", job.folder_name, exc)
+            self._fail_job(job_id, str(exc))
+
+    def _update_topic_mining_progress(self, job_id: str, stage: str, progress: int) -> None:
+        job = self._update_job(job_id, stage=stage, progress=progress)
+        if not job:
+            return
+        self.database.update_exam_folder_analysis(
+            job.owner_username,
+            job.folder_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            error=None,
+            stale=False,
+        )
+
+    def _fail_job(self, job_id: str, error_message: str) -> None:
+        job = self._update_job(
+            job_id,
+            status=UploadJobStatus.FAILED.value,
+            stage="Topic mining failed",
+            error=error_message,
+        )
+        if not job:
+            return
+        self.database.update_exam_folder_analysis(
+            job.owner_username,
+            job.folder_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            error=error_message,
+            completed_at=None,
+        )
+
+    @staticmethod
+    def _now() -> tuple[str, float]:
+        dt = datetime.now(timezone.utc)
+        return dt.isoformat(), dt.timestamp()
+
+    def _update_job(self, job_id: str, **updates: Any) -> Optional[TopicMiningJob]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+
+            for key, value in updates.items():
+                setattr(job, key, value)
+            job.updated_at, job.updated_ts = self._now()
+
+            if job.status != UploadJobStatus.QUEUED.value and job.job_id in self._pending_order:
+                self._pending_order.remove(job.job_id)
+
+            return job
+
+    def _to_public(self, job: TopicMiningJob) -> Dict[str, Any]:
+        item = asdict(job)
+        item.pop("owner_username", None)
+        item.pop("created_ts", None)
+        item.pop("updated_ts", None)
+        return item
+
+    def _trim_history_unlocked(self) -> None:
+        if len(self._jobs) <= self.max_history:
+            return
+
+        active = {
+            job_id
+            for job_id, job in self._jobs.items()
+            if job.status in {UploadJobStatus.QUEUED.value, UploadJobStatus.PROCESSING.value}
+        }
+
+        finished = [
+            (job_id, job.updated_ts)
+            for job_id, job in self._jobs.items()
+            if job.status in {UploadJobStatus.COMPLETED.value, UploadJobStatus.FAILED.value}
+        ]
+        finished.sort(key=lambda item: item[1], reverse=True)
+
+        keep_finished_count = max(0, self.max_history - len(active))
+        keep_finished_ids = {job_id for job_id, _ in finished[:keep_finished_count]}
+        keep = active.union(keep_finished_ids)
+
+        for job_id in list(self._jobs.keys()):
+            if job_id not in keep:
+                self._jobs.pop(job_id, None)
+                if job_id in self._pending_order:
+                    self._pending_order.remove(job_id)
+
+
 upload_jobs = UploadJobManager(doc_processor, db, vector_store, metadata_extractor)
+topic_mining_jobs = TopicMiningJobManager(topic_miner, db)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     upload_jobs.start()
+    topic_mining_jobs.start()
     try:
         yield
     finally:
         upload_jobs.stop()
+        topic_mining_jobs.stop()
 
 
 app = FastAPI(title="Student Study Hub RAG Chat", lifespan=lifespan)
@@ -541,6 +838,14 @@ def _get_owned_exam_document(owner_username: str, document_id: str) -> Dict[str,
     if not document:
         raise HTTPException(status_code=404, detail="Exam paper not found")
     return document
+
+
+def _list_exam_folder_documents(owner_username: str, folder_id: str) -> List[Dict[str, Any]]:
+    return [
+        document
+        for document in db.list_exam_documents(owner_username)
+        if document.get("folder_id") == folder_id
+    ]
 
 
 def _ensure_selected_files_owned(
@@ -864,6 +1169,46 @@ async def create_exam_folder(
         return {"message": "Exam folder created successfully", "folder": folder}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/exam-folders/{folder_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
+async def analyze_exam_folder(
+    folder_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    folder = _get_owned_exam_folder(current_user.username, folder_id)
+    documents = _list_exam_folder_documents(current_user.username, folder_id)
+    if not documents:
+        raise HTTPException(status_code=400, detail="No exam papers found in this folder")
+
+    try:
+        job = topic_mining_jobs.enqueue(
+            owner_username=current_user.username,
+            folder_id=folder["id"],
+            folder_name=folder["name"],
+            total_documents=len(documents),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    analysis = db.get_exam_folder_analysis(current_user.username, folder_id)
+    return {
+        "message": "Topic mining started",
+        "job": job,
+        "analysis": analysis,
+    }
+
+
+@app.get("/exam-folders/{folder_id}/analysis")
+async def get_exam_folder_analysis(
+    folder_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _get_owned_exam_folder(current_user.username, folder_id)
+    analysis = db.get_exam_folder_analysis(current_user.username, folder_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="No topic analysis found for this folder")
+    return analysis
 
 
 @app.get("/exam-papers")

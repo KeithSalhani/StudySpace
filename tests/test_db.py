@@ -82,6 +82,82 @@ def test_document_folder_assignment_is_persisted(db):
     assert db.get_all_metadata("alice")["exam.pdf"]["folder_name"] == "Past Papers"
 
 
+def test_exam_folder_analysis_is_attached_to_folder_summary(db):
+    db.create_user("alice", "hash", "salt")
+    folder = db.create_exam_folder("alice", "Security")
+
+    db.update_exam_folder_analysis(
+        "alice",
+        folder["id"],
+        folder_name=folder["name"],
+        status="processing",
+        stage="Synthesizing recurring topics",
+        progress=84,
+        model="gemini-test",
+        pipeline_version="topic-miner-v1",
+        summary={"paper_count": 3, "theme_count": 0, "question_count": 0},
+        result=None,
+        error=None,
+        stale=False,
+    )
+
+    folders = db.list_exam_folders("alice")
+    assert folders[0]["analysis"]["status"] == "processing"
+    assert folders[0]["analysis"]["summary"]["paper_count"] == 3
+
+
+def test_exam_folder_analysis_marked_stale_when_papers_change(db):
+    db.create_user("alice", "hash", "salt")
+    security = db.create_exam_folder("alice", "Security")
+    networks = db.create_exam_folder("alice", "Networks")
+
+    db.update_exam_folder_analysis(
+        "alice",
+        security["id"],
+        folder_name=security["name"],
+        status="completed",
+        stage="Topic mining complete",
+        progress=100,
+        model="gemini-test",
+        pipeline_version="topic-miner-v1",
+        summary={"paper_count": 1, "theme_count": 2, "question_count": 4},
+        result={"themes": []},
+        error=None,
+        stale=False,
+    )
+    db.update_exam_folder_analysis(
+        "alice",
+        networks["id"],
+        folder_name=networks["name"],
+        status="completed",
+        stage="Topic mining complete",
+        progress=100,
+        model="gemini-test",
+        pipeline_version="topic-miner-v1",
+        summary={"paper_count": 1, "theme_count": 1, "question_count": 4},
+        result={"themes": []},
+        error=None,
+        stale=False,
+    )
+
+    document = db.add_exam_document(
+        "alice",
+        {
+            "id": "doc-1",
+            "filename": "paper.pdf",
+            "folder_id": security["id"],
+            "folder_name": security["name"],
+            "path": "/tmp/paper.pdf",
+        },
+    )
+    assert document["folder_id"] == security["id"]
+    assert db.get_exam_folder_analysis("alice", security["id"])["stale"] is True
+
+    moved = db.update_exam_document_folder("alice", "doc-1", networks["id"])
+    assert moved["folder_id"] == networks["id"]
+    assert db.get_exam_folder_analysis("alice", networks["id"])["stale"] is True
+
+
 def test_sessions_are_scoped_to_user(db):
     db.create_user("alice", "hash-a", "salt-a")
 
