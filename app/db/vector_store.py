@@ -1,6 +1,7 @@
 """
 Vector store module using ChromaDB and sentence transformers
 """
+import json
 import logging
 import os
 import threading
@@ -36,6 +37,23 @@ class VectorStore:
         self._load_documents_from_collection()
 
         logger.info("Vector store initialized")
+
+    def _sanitize_metadata(self, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Normalize metadata to Chroma-compatible scalar values."""
+        if not metadata:
+            return {}
+
+        sanitized: Dict[str, Any] = {}
+        for key, value in metadata.items():
+            if value is None:
+                continue
+            if isinstance(value, (str, int, float, bool)):
+                sanitized[key] = value
+                continue
+
+            sanitized[key] = json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+        return sanitized
 
     def _load_documents_from_collection(self):
         """Load existing documents metadata from ChromaDB collection"""
@@ -92,7 +110,7 @@ class VectorStore:
                 metadatas = []
 
                 for i, chunk in enumerate(chunks):
-                    chunk_metadata = metadata.copy() if metadata else {}
+                    chunk_metadata = self._sanitize_metadata(metadata)
                     chunk_metadata.update({
                         "doc_id": doc_id,
                         "chunk_index": i,
@@ -111,7 +129,7 @@ class VectorStore:
                 # Store document info
                 self.documents[doc_id] = {
                     "content": content,
-                    "metadata": metadata or {},
+                    "metadata": self._sanitize_metadata(metadata),
                     "chunks": len(chunks)
                 }
 
@@ -397,7 +415,7 @@ class VectorStore:
                     ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
                     metadatas = []
                     for i in range(num_chunks):
-                        chunk_meta = metadata.copy()
+                        chunk_meta = self._sanitize_metadata(metadata)
                         chunk_meta.update({
                             "doc_id": doc_id,
                             "chunk_index": i,
@@ -441,7 +459,7 @@ class VectorStore:
                     ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
                     metadatas = []
                     for i in range(num_chunks):
-                        chunk_meta = metadata.copy()
+                        chunk_meta = self._sanitize_metadata(metadata)
                         chunk_meta.update({
                             "doc_id": doc_id,
                             "chunk_index": i,
