@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 
 from app.config import SESSION_COOKIE_NAME, SESSION_TTL_DAYS
-from app.db.metadata import JSONDatabase
+from app.db.repository import DatabaseRepository
 
 PBKDF2_ITERATIONS = 310000
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{3,32}$")
@@ -67,7 +67,7 @@ def _parse_session_value(session_value: Optional[str]) -> Optional[tuple[str, st
     return session_id, session_secret
 
 
-def create_session_for_user(db: JSONDatabase, username: str) -> tuple[str, datetime]:
+def create_session_for_user(db: DatabaseRepository, username: str) -> tuple[str, datetime]:
     session_id = secrets.token_urlsafe(24)
     session_secret = secrets.token_urlsafe(32)
     session_hash = hashlib.sha256(session_secret.encode("utf-8")).hexdigest()
@@ -82,7 +82,7 @@ def create_session_for_user(db: JSONDatabase, username: str) -> tuple[str, datet
 
 
 def get_current_user(request: Request) -> AuthenticatedUser:
-    db: JSONDatabase = request.app.state.db
+    db: DatabaseRepository = request.app.state.db
     parsed = _parse_session_value(request.cookies.get(SESSION_COOKIE_NAME))
     if not parsed:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")

@@ -17,6 +17,7 @@ import threading
 import time
 import uuid
 
+from pymongo import MongoClient
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +36,10 @@ from app.auth import (
 )
 from app.config import (
     GEMINI_API_KEY,
+    MONGODB_APP_NAME,
+    MONGODB_DB_NAME,
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+    MONGODB_URI,
     PROCESSED_DIR,
     SESSION_COOKIE_SECURE,
     STATIC_DIR,
@@ -49,7 +54,8 @@ from app.core.quiz_generator import QuizGenerator
 from app.core.flashcard_generator import FlashcardGenerator
 from app.core.metadata_extractor import MetadataExtractor
 from app.core.topic_miner import TopicMiner
-from app.db.metadata import JSONDatabase
+from app.db.mongo import MongoDatabase
+from app.db.repository import DatabaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +74,8 @@ quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 metadata_extractor = MetadataExtractor(GEMINI_API_KEY)
 topic_miner = TopicMiner(doc_processor, GEMINI_API_KEY)
-db = JSONDatabase()
+db: Optional[DatabaseRepository] = None
+mongo_client: Optional[MongoClient] = None
 
 
 def _user_root(username: str) -> Path:
@@ -109,6 +116,12 @@ def _set_session_cookie(response: Response, token: str, expires_at: datetime) ->
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+
+
+def _database() -> DatabaseRepository:
+    if db is None:
+        raise RuntimeError("Database is not initialized")
+    return db
 
 
 def get_frontend_asset_version() -> str:
@@ -172,7 +185,7 @@ class UploadJobManager:
     def __init__(
         self,
         processor: DocumentProcessor,
-        database: JSONDatabase,
+        database: Optional[DatabaseRepository],
         store: VectorStore,
         extractor: MetadataExtractor,
         max_history: int = 100,
@@ -331,6 +344,9 @@ class UploadJobManager:
         )
 
         try:
+            if self.database is None:
+                raise RuntimeError("Database is not initialized")
+
             owner = self.database.get_user(owner_username)
             if not owner:
                 raise ValueError("Owner not found for upload job")
@@ -385,7 +401,11 @@ class UploadJobManager:
                 "folder_id": folder_id,
                 "folder_name": folder_name,
             }
-            self.store.add_document(doc_id, content, metadata)
+            try:
+                self.store.add_document(doc_id, content, metadata)
+            except Exception:
+                self.database.delete_document_metadata(owner_username, filename)
+                raise
 
             elapsed = round(time.perf_counter() - started, 2)
             finished_at, _ = self._now()
@@ -458,7 +478,7 @@ class TopicMiningJobManager:
     def __init__(
         self,
         miner: TopicMiner,
-        database: JSONDatabase,
+        database: Optional[DatabaseRepository],
         max_history: int = 50,
     ):
         self.miner = miner
@@ -498,6 +518,9 @@ class TopicMiningJobManager:
         folder_name: str,
         total_documents: int,
     ) -> Dict[str, Any]:
+        if self.database is None:
+            raise RuntimeError("Database is not initialized")
+
         existing = self.database.get_exam_folder_analysis(owner_username, folder_id)
         if isinstance(existing, dict) and existing.get("status") in {
             UploadJobStatus.QUEUED.value,
@@ -730,6 +753,30 @@ topic_mining_jobs = TopicMiningJobManager(topic_miner, db)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global db
+    global mongo_client
+
+    managed_mongo = False
+    injected_database = app.state.db
+    if injected_database is not None:
+        db = injected_database
+        upload_jobs.database = injected_database
+        topic_mining_jobs.database = injected_database
+    else:
+        mongo_client = MongoClient(
+            MONGODB_URI,
+            appname=MONGODB_APP_NAME,
+            serverSelectionTimeoutMS=MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+        )
+        mongo_database = MongoDatabase(mongo_client, MONGODB_DB_NAME)
+        mongo_database.ping()
+        mongo_database.ensure_indexes()
+
+        db = mongo_database
+        upload_jobs.database = mongo_database
+        topic_mining_jobs.database = mongo_database
+        app.state.db = mongo_database
+        managed_mongo = True
     upload_jobs.start()
     topic_mining_jobs.start()
     try:
@@ -737,6 +784,12 @@ async def lifespan(_: FastAPI):
     finally:
         upload_jobs.stop()
         topic_mining_jobs.stop()
+        if managed_mongo:
+            app.state.db = None
+            db = None
+            if mongo_client is not None:
+                mongo_client.close()
+                mongo_client = None
 
 
 app = FastAPI(title="Student Study Hub RAG Chat", lifespan=lifespan)
@@ -746,7 +799,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-app.state.db = db
+app.state.db = None
 
 
 class ChatRequest(BaseModel):
@@ -817,21 +870,21 @@ def _get_owned_document_metadata(owner_username: str, filename: str) -> Dict[str
 
 
 def _get_owned_folder(owner_username: str, folder_id: str) -> Dict[str, Any]:
-    folder = db.get_folder(owner_username, folder_id)
+    folder = _database().get_folder(owner_username, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     return folder
 
 
 def _get_owned_exam_folder(owner_username: str, folder_id: str) -> Dict[str, Any]:
-    folder = db.get_exam_folder(owner_username, folder_id)
+    folder = _database().get_exam_folder(owner_username, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="Exam folder not found")
     return folder
 
 
 def _get_owned_exam_document(owner_username: str, document_id: str) -> Dict[str, Any]:
-    document = db.get_exam_document(owner_username, document_id)
+    document = _database().get_exam_document(owner_username, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Exam paper not found")
     return document
@@ -840,7 +893,7 @@ def _get_owned_exam_document(owner_username: str, document_id: str) -> Dict[str,
 def _list_exam_folder_documents(owner_username: str, folder_id: str) -> List[Dict[str, Any]]:
     return [
         document
-        for document in db.list_exam_documents(owner_username)
+        for document in _database().list_exam_documents(owner_username)
         if document.get("folder_id") == folder_id
     ]
 
@@ -875,7 +928,7 @@ async def home(request: Request):
 
 @app.get("/auth/me", response_model=SessionResponse)
 async def auth_me(current_user: AuthenticatedUser = Depends(get_current_user)):
-    user = db.get_user(current_user.username)
+    user = _database().get_user(current_user.username)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     return SessionResponse(user=user)
@@ -891,14 +944,14 @@ async def auth_signup(request: Request, response: Response, payload: AuthRequest
 
     password_hash, password_salt = create_password_record(password)
     try:
-        user = db.create_user(username, password_hash, password_salt)
+        user = _database().create_user(username, password_hash, password_salt)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     _user_upload_dir(username)
     _user_processed_dir(username)
 
-    session_value, expires_at = create_session_for_user(db, username)
+    session_value, expires_at = create_session_for_user(_database(), username)
     _set_session_cookie(response, session_value, expires_at)
     return SessionResponse(user=user)
 
@@ -911,7 +964,7 @@ async def auth_signin(request: Request, response: Response, payload: AuthRequest
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    user_record = db.get_user_credentials(username)
+    user_record = _database().get_user_credentials(username)
     if not user_record or not verify_password(
         password,
         user_record["password_hash"],
@@ -919,8 +972,8 @@ async def auth_signin(request: Request, response: Response, payload: AuthRequest
     ):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    user = db.get_user(username)
-    session_value, expires_at = create_session_for_user(db, username)
+    user = _database().get_user(username)
+    session_value, expires_at = create_session_for_user(_database(), username)
     _set_session_cookie(response, session_value, expires_at)
     return SessionResponse(user=user)
 
@@ -935,7 +988,7 @@ async def auth_logout(
     session_value = request.cookies.get(SESSION_COOKIE_NAME)
     if session_value and "." in session_value:
         session_id = session_value.split(".", 1)[0]
-        db.delete_session(session_id)
+        _database().delete_session(session_id)
     _clear_session_cookie(response)
     return {"message": "Logged out"}
 
@@ -1055,7 +1108,7 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
             if processed_path.exists():
                 processed_path.unlink(missing_ok=True)
 
-            db.delete_document_metadata(current_user.username, filename)
+            _database().delete_document_metadata(current_user.username, filename)
 
             return {"message": f"Document '{filename}' deleted successfully"}
 
@@ -1087,13 +1140,18 @@ async def update_document_tag(filename: str, request: DocumentTagRequest, curren
 
         # Only add non-empty, non-reserved tags to the user's tag list
         if normalized_tag:
-            db.add_tag(current_user.username, normalized_tag)
+            _database().add_tag(current_user.username, normalized_tag)
+
+        current_metadata = dict(_database().get_all_metadata(current_user.username).get(filename, {}))
+        previous_tag = current_metadata.get("tag")
+        _database().set_document_metadata(current_user.username, filename, {"tag": normalized_tag})
 
         success = vector_store.update_document_tag(current_user.username, filename, normalized_tag)
         if success:
             return {"message": "Document tag updated successfully", "tag": normalized_tag}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to update document tag")
+        rollback_tag = previous_tag if previous_tag is not None else ""
+        _database().set_document_metadata(current_user.username, filename, {"tag": rollback_tag})
+        raise HTTPException(status_code=500, detail="Failed to update document tag")
     except HTTPException:
         raise
     except Exception as e:
@@ -1114,7 +1172,8 @@ async def update_document_folder(
         if normalized_folder_id:
             folder = _get_owned_folder(current_user.username, normalized_folder_id)
 
-        db.set_document_folder(current_user.username, filename, folder["id"] if folder else None)
+        previous_metadata = dict(_database().get_all_metadata(current_user.username).get(filename, {}))
+        _database().set_document_folder(current_user.username, filename, folder["id"] if folder else None)
         success = vector_store.update_document_folder(
             current_user.username,
             filename,
@@ -1122,6 +1181,14 @@ async def update_document_folder(
             folder["name"] if folder else None,
         )
         if not success:
+            _database().set_document_metadata(
+                current_user.username,
+                filename,
+                {
+                    "folder_id": previous_metadata.get("folder_id"),
+                    "folder_name": previous_metadata.get("folder_name"),
+                },
+            )
             raise HTTPException(status_code=500, detail="Failed to update document folder")
 
         return {
@@ -1139,13 +1206,13 @@ async def update_document_folder(
 
 @app.get("/folders")
 async def list_folders(current_user: AuthenticatedUser = Depends(get_current_user)):
-    return {"folders": db.list_folders(current_user.username)}
+    return {"folders": _database().list_folders(current_user.username)}
 
 
 @app.post("/folders", status_code=status.HTTP_201_CREATED)
 async def create_folder(request: FolderRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     try:
-        folder = db.create_folder(current_user.username, request.name)
+        folder = _database().create_folder(current_user.username, request.name)
         return {"message": "Folder created successfully", "folder": folder}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1153,7 +1220,7 @@ async def create_folder(request: FolderRequest, current_user: AuthenticatedUser 
 
 @app.get("/exam-folders")
 async def list_exam_folders(current_user: AuthenticatedUser = Depends(get_current_user)):
-    return {"folders": db.list_exam_folders(current_user.username)}
+    return {"folders": _database().list_exam_folders(current_user.username)}
 
 
 @app.post("/exam-folders", status_code=status.HTTP_201_CREATED)
@@ -1162,7 +1229,7 @@ async def create_exam_folder(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
-        folder = db.create_exam_folder(current_user.username, request.name)
+        folder = _database().create_exam_folder(current_user.username, request.name)
         return {"message": "Exam folder created successfully", "folder": folder}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1188,7 +1255,7 @@ async def analyze_exam_folder(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
-    analysis = db.get_exam_folder_analysis(current_user.username, folder_id)
+    analysis = _database().get_exam_folder_analysis(current_user.username, folder_id)
     return {
         "message": "Topic mining started",
         "job": job,
@@ -1202,7 +1269,7 @@ async def get_exam_folder_analysis(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     _get_owned_exam_folder(current_user.username, folder_id)
-    analysis = db.get_exam_folder_analysis(current_user.username, folder_id)
+    analysis = _database().get_exam_folder_analysis(current_user.username, folder_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="No topic analysis found for this folder")
     return analysis
@@ -1210,7 +1277,7 @@ async def get_exam_folder_analysis(
 
 @app.get("/exam-papers")
 async def list_exam_papers(current_user: AuthenticatedUser = Depends(get_current_user)):
-    return {"documents": db.list_exam_documents(current_user.username)}
+    return {"documents": _database().list_exam_documents(current_user.username)}
 
 
 @app.post("/exam-papers/upload", status_code=status.HTTP_201_CREATED)
@@ -1229,7 +1296,7 @@ async def upload_exam_paper(
 
     try:
         await asyncio.to_thread(_save_upload_file, file.file, file_path)
-        document = db.add_exam_document(
+        document = _database().add_exam_document(
             current_user.username,
             {
                 "id": uuid.uuid4().hex,
@@ -1261,7 +1328,7 @@ async def move_exam_paper(
     try:
         document = _get_owned_exam_document(current_user.username, document_id)
         del document
-        updated = db.update_exam_document_folder(current_user.username, document_id, request.folder_id)
+        updated = _database().update_exam_document_folder(current_user.username, document_id, request.folder_id)
         return {
             "message": "Exam paper moved successfully",
             "document": updated,
@@ -1296,13 +1363,13 @@ async def get_exam_paper_file(
 @app.get("/tags")
 async def get_tags(current_user: AuthenticatedUser = Depends(get_current_user)):
     """Get all tags"""
-    return {"tags": db.get_tags(current_user.username)}
+    return {"tags": _database().get_tags(current_user.username)}
 
 
 @app.post("/tags")
 async def add_tag(request: TagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Add a new tag"""
-    if db.add_tag(current_user.username, request.tag):
+    if _database().add_tag(current_user.username, request.tag):
         return {"message": "Tag added successfully", "tag": request.tag}
     raise HTTPException(status_code=400, detail="Tag already exists")
 
@@ -1310,7 +1377,7 @@ async def add_tag(request: TagRequest, current_user: AuthenticatedUser = Depends
 @app.delete("/tags/{tag_name}")
 async def delete_tag(tag_name: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a tag"""
-    if db.delete_tag(current_user.username, tag_name):
+    if _database().delete_tag(current_user.username, tag_name):
         return {"message": "Tag deleted successfully"}
     raise HTTPException(status_code=404, detail="Tag not found")
 
@@ -1319,20 +1386,20 @@ async def delete_tag(tag_name: str, current_user: AuthenticatedUser = Depends(ge
 @app.get("/notes")
 async def get_notes(current_user: AuthenticatedUser = Depends(get_current_user)):
     """Get all notes"""
-    return {"notes": db.get_notes(current_user.username)}
+    return {"notes": _database().get_notes(current_user.username)}
 
 
 @app.post("/notes")
 async def add_note(request: NoteRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Add a new note"""
-    note = db.add_note(current_user.username, request.content)
+    note = _database().add_note(current_user.username, request.content)
     return {"message": "Note added successfully", "note": note}
 
 
 @app.delete("/notes/{note_id}")
 async def delete_note(note_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a note"""
-    if db.delete_note(current_user.username, note_id):
+    if _database().delete_note(current_user.username, note_id):
         return {"message": "Note deleted successfully"}
     raise HTTPException(status_code=404, detail="Note not found")
 
@@ -1381,7 +1448,7 @@ async def generate_flashcards(request: FlashcardRequest, current_user: Authentic
 @app.get("/metadata")
 async def get_metadata(current_user: AuthenticatedUser = Depends(get_current_user)):
     """Get all extracted metadata for the user"""
-    return db.get_all_metadata(current_user.username)
+    return _database().get_all_metadata(current_user.username)
 
 
 if __name__ == "__main__":

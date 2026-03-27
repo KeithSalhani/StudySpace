@@ -1,100 +1,92 @@
 # Study Space
 
-Study Space is a FastAPI + React study assistant for document-grounded chat, quizzes, flashcards, notes, and topic tagging. Users sign up with a username and password, upload their own study material, and interact only with data that belongs to their account.
+Study Space is a FastAPI + React study workspace for user-scoped document chat, revision tools, and exam-paper analysis. Users can upload their own material, organize it into folders, generate quizzes and flashcards, chat against indexed documents with a transparent retrieval trace, and analyze folders of exam papers in the Topic Miner workspace.
 
-## What It Does
+## Features
 
 - Upload PDF, DOCX, TXT, and Markdown study documents
-- Process and classify uploaded documents into topic tags
-- Ask questions against your own indexed material with RAG
-- Generate quizzes and flashcards from a selected document
-- Save personal notes and manage personal tags
-- Keep each user’s documents, notes, sessions, and retrieval results isolated
+- User-scoped RAG chat over uploaded material
+- Transparent chat trace showing generated queries, retrieval runs, and fused evidence
+- Automatic document tagging with editable tags
+- Folder organization for study documents
+- Quiz and flashcard generation from selected documents
+- Personal notes and tags
+- Background upload job tracking
+- Calendar/workspace views for extracted academic events
+- Topic Miner workspace for exam-paper analysis across multiple PDFs
+- Inline owned-file viewing for study documents and exam papers
+- Accessibility settings including voice input, higher contrast, larger text, reduced motion, and stronger focus states
 
-## Stack
+## Architecture
 
-- Frontend: React + Vite
-- Backend: FastAPI
-- Vector search: ChromaDB
+- Frontend: React + Vite, built into backend-served static assets
+- Backend: FastAPI in [app/main.py](/home/horsehead/Projects/StudySpace_Interim/app/main.py)
+- Structured app data: MongoDB through [app/db/mongo.py](/home/horsehead/Projects/StudySpace_Interim/app/db/mongo.py)
+- Repository contract: [app/db/repository.py](/home/horsehead/Projects/StudySpace_Interim/app/db/repository.py)
+- Vector store: ChromaDB in [app/db/vector_store.py](/home/horsehead/Projects/StudySpace_Interim/app/db/vector_store.py)
 - Embeddings: `all-MiniLM-L6-v2`
 - LLM features: Google Gemini via `google-genai`
-- Metadata store: local JSON file
+- Ingestion and metadata extraction: [app/core/ingestion.py](/home/horsehead/Projects/StudySpace_Interim/app/core/ingestion.py), [app/core/metadata_extractor.py](/home/horsehead/Projects/StudySpace_Interim/app/core/metadata_extractor.py)
+- Exam topic mining: [app/core/topic_miner.py](/home/horsehead/Projects/StudySpace_Interim/app/core/topic_miner.py)
+
+## Data Model
+
+MongoDB stores the structured runtime data:
+
+- users
+- sessions
+- tags
+- notes
+- folders
+- documents
+- exam folder analyses
+- exam documents
+
+ChromaDB stores chunked document embeddings and retrieval metadata.
 
 ## Authentication And Isolation
 
-### Login model
+- Users sign up and sign in with username + password.
+- Passwords are stored as PBKDF2 hashes with per-user salts in [app/auth.py](/home/horsehead/Projects/StudySpace_Interim/app/auth.py).
+- Successful auth issues an `HttpOnly` cookie named `studyspace_session`.
+- Session settings come from [app/config.py](/home/horsehead/Projects/StudySpace_Interim/app/config.py) via `SESSION_TTL_DAYS` and `SESSION_COOKIE_SECURE`.
 
-- Accounts are stored in `db.json` through `app/db/metadata.py`.
-- Passwords are stored as PBKDF2 hashes with per-user salts. The hashing and session helpers live in `app/auth.py`.
-- Successful sign-in/sign-up issues an `HttpOnly` session cookie named `studyspace_session`.
-- Sessions are validated server-side on every protected request.
+User data is isolated as follows:
 
-### How user data is separated
-
-- Notes and tags are stored per user in `db.json`.
-- Uploaded source files are stored under `app/users/<username>/uploads/`.
-- Processed Markdown files are stored under `app/users/<username>/processed/`.
-- Upload job history is kept in memory but filtered per authenticated user before being returned.
-- ChromaDB is currently shared physically but segregated logically:
-  - one persistent Chroma database directory
-  - one shared collection
-  - every stored chunk includes `owner_username`
-  - every search, list, metadata lookup, and delete path filters on `owner_username`
-
-That means users do not get a separate Chroma database right now. Isolation is enforced through ownership metadata and mandatory filters in the vector-store layer.
+- MongoDB records are scoped by user identity.
+- Study documents are stored under `app/users/<username>/uploads/`.
+- Processed Markdown is stored under `app/users/<username>/processed/`.
+- Exam papers are stored under `app/users/<username>/exam_papers/`.
+- ChromaDB is physically shared, but every indexed chunk stores `owner_username`.
+- Search, metadata lookup, folder assignment, tag updates, file fetches, and deletes are scoped by authenticated user.
 
 ## Storage Layout
 
-Current generated storage paths:
-
 ```text
-app/chroma_db/              Shared Chroma persistence
-app/users/<username>/uploads/
-app/users/<username>/processed/
-db.json                     User accounts, sessions, notes, tags
+app/chroma_db/                      Shared Chroma persistence
+app/static/dist/                    Built frontend assets
+app/users/<username>/uploads/       Uploaded study documents
+app/users/<username>/processed/     Processed markdown for study documents
+app/users/<username>/exam_papers/   Uploaded exam papers
+MongoDB                             Structured runtime data
 ```
 
-Legacy root-level generated directories such as `uploads/`, `processed/`, and `chroma_db/` are obsolete and should not be used.
-
-## Project Structure
-
-```text
-.
-├── app/
-│   ├── auth.py
-│   ├── config.py
-│   ├── main.py
-│   ├── core/
-│   │   ├── classification.py
-│   │   ├── flashcard_generator.py
-│   │   ├── ingestion.py
-│   │   ├── quiz_generator.py
-│   │   └── rag.py
-│   ├── db/
-│   │   ├── metadata.py
-│   │   └── vector_store.py
-│   ├── static/
-│   ├── templates/
-│   └── users/
-├── frontend/
-├── tests/
-├── requirements.txt
-└── README.md
-```
+Legacy `db.json` is not used at runtime anymore. It is only relevant if you need to import old data into MongoDB.
 
 ## Setup
 
 ### Prerequisites
 
 - Python 3.12 recommended
-- Node.js for the frontend build
+- Node.js
 - A valid `GEMINI_API_KEY`
+- A reachable MongoDB instance
 
 ### Install
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cd frontend
 npm install
@@ -104,69 +96,135 @@ cd ..
 
 ### Configure
 
-Set the Gemini key in your environment or `.env`:
+Set required environment variables in your shell or `.env`:
 
 ```bash
 export GEMINI_API_KEY="your_key_here"
+export MONGODB_URI="mongodb://localhost:27017"
+export MONGODB_DB_NAME="studyspace"
 ```
 
-Optional auth-related env vars:
+Optional settings:
 
 ```bash
-SESSION_TTL_DAYS=7
-SESSION_COOKIE_SECURE=false
+export SESSION_TTL_DAYS=7
+export SESSION_COOKIE_SECURE=false
+export MONGODB_APP_NAME=studyspace-api
+export MONGODB_SERVER_SELECTION_TIMEOUT_MS=5000
 ```
 
-## Run
+### Run
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`, create an account, then upload documents and use the workspace.
+Open `http://127.0.0.1:8000`, create an account, and use the workspace.
 
-## Main API Routes
+## Migrating Legacy `db.json`
 
-Auth:
+If you have legacy JSON-backed data, import it into MongoDB with:
+
+```bash
+python scripts/migrate_json_to_mongo.py \
+  --json-path db.json \
+  --mongo-uri "$MONGODB_URI" \
+  --db-name "$MONGODB_DB_NAME"
+```
+
+Preview counts without writing:
+
+```bash
+python scripts/migrate_json_to_mongo.py \
+  --json-path db.json \
+  --mongo-uri "$MONGODB_URI" \
+  --db-name "$MONGODB_DB_NAME" \
+  --dry-run
+```
+
+The importer is idempotent at the record level and upserts users, sessions, tags, notes, folders, document metadata, exam analyses, and exam documents.
+
+## Topic Miner
+
+Topic Miner is the exam-paper analysis workspace. It does not reuse the normal study-document upload flow.
+
+Current flow:
+
+1. Create dedicated exam folders.
+2. Upload exam PDFs into those folders.
+3. Run folder-level analysis.
+4. Gemini extracts topic structure from each paper.
+5. Folder-level recurring themes and example questions are synthesized and saved.
+6. Saved analyses are reopened later and marked stale when folder contents change.
+
+## Chat Flow
+
+The chat pipeline in [app/core/rag.py](/home/horsehead/Projects/StudySpace_Interim/app/core/rag.py) is a retrieval-planned RAG flow rather than a single search:
+
+1. The user sends a message to `POST /chat`.
+2. The backend builds a compact catalog from the user’s visible documents.
+3. Gemini produces a small retrieval plan.
+4. Retrieval runs execute against Chroma by step.
+5. Chunks are fused and deduplicated.
+6. Gemini answers from the fused evidence set.
+7. The API returns `response`, `sources`, and `trace`.
+8. The frontend renders the trace inline.
+
+## API Surface
+
+### Auth
 
 - `POST /auth/signup`
 - `POST /auth/signin`
 - `POST /auth/logout`
 - `GET /auth/me`
 
-Workspace:
+### Study Workspace
 
 - `POST /upload`
 - `GET /upload-jobs`
 - `GET /upload-jobs/{job_id}`
 - `POST /chat`
 - `GET /documents`
+- `GET /documents/{filename}/file`
 - `DELETE /documents/{filename}`
-- `GET/POST/DELETE /tags`
-- `GET/POST/DELETE /notes`
+- `PUT /documents/{filename}/tag`
+- `PUT /documents/{filename}/folder`
+- `GET /folders`
+- `POST /folders`
+- `GET /tags`
+- `POST /tags`
+- `DELETE /tags/{tag_name}`
+- `GET /notes`
+- `POST /notes`
+- `DELETE /notes/{note_id}`
 - `POST /quiz/generate`
 - `POST /flashcards/generate`
+- `GET /metadata`
 
-All workspace routes require an authenticated session.
+### Topic Miner / Exam Papers
+
+- `GET /exam-folders`
+- `POST /exam-folders`
+- `POST /exam-folders/{folder_id}/analyze`
+- `GET /exam-folders/{folder_id}/analysis`
+- `GET /exam-papers`
+- `POST /exam-papers/upload`
+- `PUT /exam-papers/{document_id}/folder`
+- `GET /exam-papers/{document_id}/file`
 
 ## Verification
 
 Useful commands:
 
 ```bash
-./venv/bin/python -m pytest tests
-./venv/bin/python -m coverage erase
-./venv/bin/python -m coverage run --source=app -m pytest tests
-./venv/bin/python -m coverage report -m
+./.venv/bin/python -m pytest tests/test_auth.py tests/test_api.py
+./.venv/bin/python -m pytest tests/test_mongo_db.py
+./.venv/bin/python -m coverage run --source=app -m pytest tests
 cd frontend && npm run build
 ```
 
 Notes:
 
-- Use `--source=app` when running coverage so the report is limited to the application code and avoids errors from synthetic modules created by some dependencies.
-- If you want coverage for only the app code total, the last line of `coverage report -m` shows the overall percentage.
-
-## Notes
-
-- Chroma isolation is currently logical, not physical. If you want stronger tenant isolation, the next step is per-user collections or per-user Chroma directories.
-- The repo still has some compatibility constants for old shared upload/processed paths, but active document storage is user-scoped under `app/users/`.
+- `tests/test_mongo_db.py` requires `MONGODB_TEST_URI` and skips otherwise.
+- ChromaDB remains the vector store in the current implementation; MongoDB replaces the old JSON-backed structured store only.
