@@ -326,6 +326,19 @@ async def test_upload_document_rejects_invalid_filename(main_module):
 
 
 @pytest.mark.asyncio
+async def test_upload_document_rejects_unsupported_file_type(main_module):
+    upload = UploadFile(filename="archive.zip", file=BytesIO(b"content"))
+    upload.close = AsyncMock()
+    main_module.doc_processor.ensure_supported_file.side_effect = ValueError("Unsupported file type")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main_module.upload_document(upload, current_user=user())
+
+    assert exc_info.value.status_code == 400
+    assert "Unsupported file type" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
 async def test_upload_document_accepts_folder_id(main_module):
     main_module.app.state.db.create_user("alice", "hash", "salt")
     folder = main_module.app.state.db.create_folder("alice", "Past Papers")

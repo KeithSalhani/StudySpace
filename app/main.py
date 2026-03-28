@@ -1003,6 +1003,10 @@ async def upload_document(
     filename = os.path.basename(file.filename or "").strip()
     if not filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
+    try:
+        doc_processor.ensure_supported_file(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     storage_name = f"{uuid.uuid4().hex}_{filename}"
     file_path = _user_upload_dir(current_user.username) / storage_name

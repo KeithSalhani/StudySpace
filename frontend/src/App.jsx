@@ -1956,7 +1956,7 @@ export default function App() {
               ref={fileInputRef}
               hidden
               type="file"
-              accept=".pdf,.docx,.txt,.md"
+              accept=".aac,.adoc,.asciidoc,.asc,.bmp,.csv,.docx,.flac,.gif,.htm,.html,.jpeg,.jpg,.latex,.m4a,.markdown,.md,.mp3,.oga,.ogg,.pdf,.png,.pptx,.text,.tex,.tif,.tiff,.txt,.vtt,.wav,.webp,.xhtml,.xlsx"
               multiple
               onChange={async (event) => {
                 await handleUpload(event.currentTarget.files);

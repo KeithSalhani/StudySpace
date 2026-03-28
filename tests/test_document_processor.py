@@ -36,6 +36,11 @@ def test_process_document_file_not_found(document_processor):
         with pytest.raises(FileNotFoundError):
             document_processor.process_document("nonexistent.pdf")
 
+def test_process_document_rejects_unsupported_extension(document_processor):
+    with patch('pathlib.Path.exists', return_value=True):
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            document_processor.process_document("archive.zip")
+
 def test_classify_content_success(document_processor, mock_classifier):
     # Setup
     mock_instance = mock_classifier.return_value
@@ -74,3 +79,16 @@ def test_process_text_file_success(document_processor):
         result = document_processor.process_text_file("test.txt")
         assert result == "Text content"
 
+def test_process_document_uses_text_handler_for_txt(document_processor):
+    with patch('pathlib.Path.exists', return_value=True):
+        with patch.object(document_processor, 'process_text_file', return_value="Text content") as process_text:
+            result = document_processor.process_document("test.txt")
+
+    assert result == "Text content"
+    process_text.assert_called_once_with("test.txt")
+
+def test_supports_file_includes_audio_and_text_extensions(document_processor):
+    assert document_processor.supports_file("lecture.txt") is True
+    assert document_processor.supports_file("lecture.mp3") is True
+    assert document_processor.supports_file("lecture.wav") is True
+    assert document_processor.supports_file("archive.zip") is False
