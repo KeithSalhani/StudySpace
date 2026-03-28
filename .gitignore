@@ -33,3 +33,12 @@ Thumbs.db
 screenshot.png
 gemini.md
 pw.md
+report/final-report
+.local
+docs
+prs
+.codex
+.coverage
+analysis.md
+scripts/export_architecture_diagrams.mjs
+output
