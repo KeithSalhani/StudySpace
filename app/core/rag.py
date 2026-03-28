@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from google import genai
 
+from app.core.workspace_catalog import build_workspace_catalog_snapshot
 from app.db.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -57,22 +58,23 @@ class RAGChat:
         try:
             total_started = time.perf_counter()
 
-            available_tags = self._get_available_tags(owner_username, selected_files)
+            workspace_catalog = self._build_workspace_catalog(owner_username, selected_files)
+            available_tags = sorted((workspace_catalog.get("tags") or {}).keys())
 
             planning_started = time.perf_counter()
             planned_queries = self._generate_query_plan(
                 message,
                 selected_files=selected_files,
-                available_tags=available_tags,
+                workspace_catalog=workspace_catalog,
             )
             planning_ms = round((time.perf_counter() - planning_started) * 1000, 1)
 
             retrieval_started = time.perf_counter()
-            retrieval_runs = self._retrieve_for_queries(
+            retrieval_runs = self._execute_search_plan(
                 planned_queries,
                 owner_username=owner_username,
                 selected_files=selected_files,
-                available_tags=available_tags,
+                workspace_catalog=workspace_catalog,
             )
             fused_results = self._fuse_results(retrieval_runs)
             retrieval_ms = round((time.perf_counter() - retrieval_started) * 1000, 1)
@@ -98,7 +100,9 @@ class RAGChat:
                         "id": run["query_id"],
                         "text": run["query"],
                         "goal": run["goal"],
+                        "search_mode": run["search_mode"],
                         "module_tag": run["module_tag"],
+                        "target_files": run["target_files"],
                         "results_found": len(run["results"]),
                     }
                     for run in retrieval_runs
@@ -107,7 +111,7 @@ class RAGChat:
                 "fused_results": fused_results,
                 "full_document_fetches": response_payload["full_document_fetches"],
                 "selected_files": selected_files or [],
-                "available_tags": available_tags,
+                "workspace_catalog": workspace_catalog,
                 "model": self.model_id,
                 "summary": {
                     "queries_used": len(retrieval_runs),
@@ -138,56 +142,73 @@ class RAGChat:
             logger.error("Error in chat: %s", exc)
             raise
 
-    def _get_available_tags(
+    def _build_workspace_catalog(
         self,
         owner_username: str,
         selected_files: Optional[List[str]],
-    ) -> List[str]:
+    ) -> Dict[str, Any]:
         documents = self.vector_store.list_documents(owner_username)
         visible_documents = [
             doc
             for doc in documents
             if not selected_files or doc.get("filename") in selected_files
         ]
+        return build_workspace_catalog_snapshot(searchable_documents=visible_documents)
 
-        tags = {
-            (doc.get("tag") or "").strip()
-            for doc in visible_documents
-            if (doc.get("tag") or "").strip() and (doc.get("tag") or "").strip().lower() != "uncategorized"
-        }
-        return sorted(tags)
+    def _get_catalog_files(self, workspace_catalog: Dict[str, Any]) -> List[str]:
+        filenames = []
+        seen = set()
+
+        for files in (workspace_catalog.get("tags") or {}).values():
+            if not isinstance(files, list):
+                continue
+            for item in files:
+                if isinstance(item, str) and item not in seen:
+                    seen.add(item)
+                    filenames.append(item)
+
+        for item in workspace_catalog.get("untagged_files") or []:
+            if isinstance(item, str) and item not in seen:
+                seen.add(item)
+                filenames.append(item)
+
+        return sorted(filenames, key=str.lower)
 
     def _generate_query_plan(
         self,
         message: str,
         selected_files: Optional[List[str]],
-        available_tags: List[str],
+        workspace_catalog: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         selected_files_label = ", ".join(selected_files or []) or "None"
-        tags_label = ", ".join(available_tags) or "None"
-        prompt = f"""You are planning retrieval for a student study assistant.
-Generate exactly {self.QUERY_COUNT} complementary search queries for the user's question.
+        prompt = f"""You are planning search strategy for a student study assistant.
+Generate 1 to {self.QUERY_COUNT} search steps for the user's question.
 
 Return JSON with this exact shape:
 {{
   "queries": [
     {{
-      "text": "search query",
-      "goal": "what this query is trying to retrieve",
-      "module_tag": "one exact tag from the allowed list or null"
+      "text": "search query or document-review label",
+      "goal": "what this step is trying to retrieve",
+      "search_mode": "unfocused | focused",
+      "module_tag": "one exact tag from the catalog or null",
+      "target_files": ["exact filename from the catalog"]
     }}
   ]
 }}
 
 Rules:
-- The queries should be different from each other and cover different angles.
-- Prefer short, search-friendly phrasing.
-- If a module tag would help retrieval, choose one exact tag from the allowed list.
-- If no tag is clearly appropriate, use null for module_tag.
-- Never invent tags outside the allowed list.
+- `unfocused` means broad chunk retrieval without extra narrowing.
+- `focused` means chunk retrieval narrowed by an exact tag, exact files, or both.
+- Keep `text` short and search-friendly for `unfocused` and `focused`.
+- `module_tag` must be one exact tag from the catalog or null.
+- `target_files` must contain only exact filenames from the catalog.
+- Never invent tags or files outside the catalog.
 
 Selected files: {selected_files_label}
-Allowed module tags: {tags_label}
+Workspace catalog:
+{json.dumps(workspace_catalog, ensure_ascii=True, sort_keys=True)}
+
 User question: {message}
 """
 
@@ -198,70 +219,89 @@ User question: {message}
                 config={"response_mime_type": "application/json"},
             )
             plan = json.loads(response.text or "{}")
-            normalized = self._normalize_query_plan(plan.get("queries"), available_tags, message)
+            normalized = self._normalize_query_plan(
+                plan.get("queries"),
+                workspace_catalog=workspace_catalog,
+                fallback_message=message,
+            )
             if normalized:
                 return normalized
         except Exception as exc:
             logger.warning("Falling back to heuristic query plan: %s", exc)
 
-        return self._fallback_query_plan(message, available_tags)
+        return self._fallback_query_plan(message, workspace_catalog)
 
     def _normalize_query_plan(
         self,
         items: Any,
-        available_tags: List[str],
+        workspace_catalog: Dict[str, Any],
         fallback_message: str,
     ) -> List[Dict[str, Any]]:
         if not isinstance(items, list):
             return []
 
+        available_tags = sorted((workspace_catalog.get("tags") or {}).keys())
+        available_files = self._get_catalog_files(workspace_catalog)
         normalized: List[Dict[str, Any]] = []
-        seen_queries = set()
+        seen_steps = set()
 
         for index, item in enumerate(items):
             if not isinstance(item, dict):
                 continue
 
+            module_tag = self._normalize_module_tag(item.get("module_tag"), available_tags)
+            target_files = self._normalize_target_files(item.get("target_files"), available_files)
+            search_mode = self._normalize_search_mode(item.get("search_mode"), module_tag, target_files)
             text = " ".join(str(item.get("text", "")).split())
             if not text:
                 continue
 
-            dedupe_key = text.lower()
-            if dedupe_key in seen_queries:
-                continue
-            seen_queries.add(dedupe_key)
+            if search_mode == "unfocused":
+                module_tag = None
+                target_files = []
+            elif search_mode == "focused" and not module_tag and not target_files:
+                search_mode = "unfocused"
 
-            module_tag = self._normalize_module_tag(item.get("module_tag"), available_tags)
+            dedupe_key = (
+                search_mode,
+                text.lower(),
+                (module_tag or "").lower(),
+                tuple(filename.lower() for filename in target_files),
+            )
+            if dedupe_key in seen_steps:
+                continue
+            seen_steps.add(dedupe_key)
+
             normalized.append(
                 {
                     "query_id": f"q{len(normalized) + 1}",
                     "text": text,
                     "goal": " ".join(str(item.get("goal", "")).split()) or f"Explore angle {index + 1}",
+                    "search_mode": search_mode,
                     "module_tag": module_tag,
+                    "target_files": target_files,
                 }
             )
 
             if len(normalized) == self.QUERY_COUNT:
                 break
 
-        if len(normalized) < self.QUERY_COUNT:
-            fallbacks = self._fallback_query_plan(fallback_message, available_tags)
-            for fallback in fallbacks:
-                if fallback["text"].lower() not in seen_queries:
-                    normalized.append(fallback)
-                    seen_queries.add(fallback["text"].lower())
-                if len(normalized) == self.QUERY_COUNT:
-                    break
+        if normalized:
+            return normalized[: self.QUERY_COUNT]
 
-        return normalized[: self.QUERY_COUNT]
+        return self._fallback_query_plan(fallback_message, workspace_catalog)
 
     def _fallback_query_plan(
         self,
         message: str,
-        available_tags: List[str],
+        workspace_catalog: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         base_message = message.strip() or "student study question"
+        available_tags = sorted((workspace_catalog.get("tags") or {}).keys())
+        available_files = self._get_catalog_files(workspace_catalog)
         inferred_tag = self._infer_module_tag(base_message, available_tags)
+        inferred_files = self._infer_target_files(base_message, available_files)
+
         variants = [
             base_message,
             f"Core concepts and definitions for {base_message}",
@@ -273,7 +313,9 @@ User question: {message}
                 "query_id": f"q{index + 1}",
                 "text": variant,
                 "goal": goal,
+                "search_mode": "focused" if inferred_tag else "unfocused",
                 "module_tag": inferred_tag,
+                "target_files": inferred_files if index == 0 else [],
             }
             for index, (variant, goal) in enumerate(
                 zip(
@@ -294,6 +336,15 @@ User question: {message}
                 return tag
         return None
 
+    def _infer_target_files(self, message: str, available_files: List[str]) -> List[str]:
+        lowered_message = message.lower()
+        matched = [
+            filename
+            for filename in available_files
+            if filename.lower() in lowered_message
+        ]
+        return matched[: self.FULL_DOCUMENT_FETCH_LIMIT]
+
     def _normalize_module_tag(
         self,
         value: Any,
@@ -312,23 +363,70 @@ User question: {message}
                 return tag
         return None
 
-    def _retrieve_for_queries(
+    def _normalize_target_files(
+        self,
+        value: Any,
+        available_files: List[str],
+    ) -> List[str]:
+        if not isinstance(value, list):
+            return []
+
+        allowed_lookup = {filename.lower(): filename for filename in available_files}
+        normalized: List[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            match = allowed_lookup.get(item.strip().lower())
+            if match and match not in normalized:
+                normalized.append(match)
+        return normalized
+
+    def _normalize_search_mode(
+        self,
+        value: Any,
+        module_tag: Optional[str],
+        target_files: List[str],
+    ) -> str:
+        if isinstance(value, str):
+            lowered = value.strip().lower().replace("-", "_").replace(" ", "_")
+            if lowered in {"unfocused", "broad", "general"}:
+                return "unfocused"
+            if lowered in {"focused", "narrow", "filtered"}:
+                return "focused"
+
+        if target_files:
+            return "focused"
+        if module_tag:
+            return "focused"
+        return "unfocused"
+
+    def _execute_search_plan(
         self,
         planned_queries: List[Dict[str, Any]],
         owner_username: str,
         selected_files: Optional[List[str]],
-        available_tags: List[str],
+        workspace_catalog: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
+        available_tags = sorted((workspace_catalog.get("tags") or {}).keys())
+        available_files = self._get_catalog_files(workspace_catalog)
         retrieval_runs: List[Dict[str, Any]] = []
 
         for item in planned_queries:
             module_tag = self._normalize_module_tag(item.get("module_tag"), available_tags)
-            active_tags = [module_tag] if module_tag and not selected_files else None
+            search_mode = self._normalize_search_mode(item.get("search_mode"), module_tag, item.get("target_files") or [])
+            target_files = self._normalize_target_files(item.get("target_files"), available_files)
+
+            active_files = target_files or selected_files
+            active_tags = [module_tag] if module_tag else None
+            if search_mode == "unfocused":
+                active_files = selected_files
+                active_tags = None
+
             raw_results = self.vector_store.search(
                 item["text"],
                 owner_username=owner_username,
                 n_results=self.SEARCH_RESULTS_PER_QUERY,
-                selected_files=selected_files,
+                selected_files=active_files,
                 selected_tags=active_tags,
             )
 
@@ -337,7 +435,9 @@ User question: {message}
                     "query_id": item["query_id"],
                     "query": item["text"],
                     "goal": item["goal"],
+                    "search_mode": search_mode,
                     "module_tag": module_tag,
+                    "target_files": target_files,
                     "results": [
                         self._serialize_search_result(result, rank=index + 1, query_id=item["query_id"])
                         for index, result in enumerate(raw_results)

@@ -35,9 +35,9 @@ def test_chat_success_returns_trace_and_sources(rag_chat, mock_vector_store, moc
             json.dumps(
                 {
                     "queries": [
-                        {"text": "distributed systems summary", "goal": "overview", "module_tag": None},
-                        {"text": "distributed systems consistency models", "goal": "concepts", "module_tag": None},
-                        {"text": "distributed systems examples", "goal": "examples", "module_tag": None},
+                        {"text": "distributed systems summary", "goal": "overview", "search_mode": "unfocused", "module_tag": None, "target_files": []},
+                        {"text": "distributed systems consistency models", "goal": "concepts", "search_mode": "unfocused", "module_tag": None, "target_files": []},
+                        {"text": "distributed systems examples", "goal": "examples", "search_mode": "unfocused", "module_tag": None, "target_files": []},
                     ]
                 }
             )
@@ -85,6 +85,7 @@ def test_chat_success_returns_trace_and_sources(rag_chat, mock_vector_store, moc
     assert len(payload["trace"]["generated_queries"]) == 3
     assert len(payload["trace"]["retrieval_runs"]) == 3
     assert payload["trace"]["summary"]["passages_used"] == 2
+    assert payload["trace"]["generated_queries"][0]["search_mode"] == "unfocused"
     assert payload["sources"][0]["filename"] == "week1.pdf"
     assert mock_client.models.generate_content.call_count == 3
     assert mock_vector_store.search.call_count == 3
@@ -97,9 +98,9 @@ def test_chat_uses_module_tag_filter_when_plan_selects_one(rag_chat, mock_vector
             json.dumps(
                 {
                     "queries": [
-                        {"text": "memory forensics process list", "goal": "facts", "module_tag": "Forensics"},
-                        {"text": "memory forensics artifacts", "goal": "artifacts", "module_tag": "Forensics"},
-                        {"text": "memory forensics examples", "goal": "examples", "module_tag": "Forensics"},
+                        {"text": "memory forensics process list", "goal": "facts", "search_mode": "focused", "module_tag": "Forensics", "target_files": []},
+                        {"text": "memory forensics artifacts", "goal": "artifacts", "search_mode": "focused", "module_tag": "Forensics", "target_files": []},
+                        {"text": "memory forensics examples", "goal": "examples", "search_mode": "focused", "module_tag": "Forensics", "target_files": []},
                     ]
                 }
             )
@@ -128,16 +129,20 @@ def test_chat_uses_module_tag_filter_when_plan_selects_one(rag_chat, mock_vector
         assert call.kwargs["selected_tags"] == ["Forensics"]
 
 
-def test_chat_with_selected_files_does_not_add_tag_filter(rag_chat, mock_vector_store, mock_genai):
+def test_chat_with_selected_files_can_add_exact_file_and_tag_focus(rag_chat, mock_vector_store, mock_genai):
     mock_client = mock_genai.Client.return_value
     mock_client.models.generate_content.side_effect = [
         make_response(
             json.dumps(
                 {
                     "queries": [
-                        {"text": "file1 summary", "goal": "overview", "module_tag": "Security"},
-                        {"text": "file1 definitions", "goal": "definitions", "module_tag": "Security"},
-                        {"text": "file1 examples", "goal": "examples", "module_tag": "Security"},
+                        {
+                            "text": "file1 summary",
+                            "goal": "overview",
+                            "search_mode": "focused",
+                            "module_tag": "Security",
+                            "target_files": ["file1.pdf"],
+                        }
                     ]
                 }
             )
@@ -145,23 +150,22 @@ def test_chat_with_selected_files_does_not_add_tag_filter(rag_chat, mock_vector_
         make_response(
             json.dumps(
                 {
-                    "answer": "",
+                    "answer": "Answer",
                     "needs_full_documents": False,
                     "full_document_filenames": [],
                     "missing_information": "",
                 }
             )
         ),
-        make_response("Answer"),
     ]
     mock_vector_store.list_documents.return_value = [{"filename": "file1.pdf", "tag": "Security"}]
-    mock_vector_store.search.side_effect = [[], [], []]
+    mock_vector_store.search.side_effect = [[]]
 
     rag_chat.chat("Summarize this file", owner_username="alice", selected_files=["file1.pdf"])
 
-    for call in mock_vector_store.search.call_args_list:
-        assert call.kwargs["selected_files"] == ["file1.pdf"]
-        assert call.kwargs["selected_tags"] is None
+    mock_vector_store.search.assert_called_once()
+    assert mock_vector_store.search.call_args.kwargs["selected_files"] == ["file1.pdf"]
+    assert mock_vector_store.search.call_args.kwargs["selected_tags"] == ["Security"]
 
 
 def test_chat_empty_response_raises(rag_chat, mock_vector_store, mock_genai):
@@ -171,9 +175,9 @@ def test_chat_empty_response_raises(rag_chat, mock_vector_store, mock_genai):
             json.dumps(
                 {
                     "queries": [
-                        {"text": "query one", "goal": "one", "module_tag": None},
-                        {"text": "query two", "goal": "two", "module_tag": None},
-                        {"text": "query three", "goal": "three", "module_tag": None},
+                        {"text": "query one", "goal": "one", "search_mode": "unfocused", "module_tag": None, "target_files": []},
+                        {"text": "query two", "goal": "two", "search_mode": "unfocused", "module_tag": None, "target_files": []},
+                        {"text": "query three", "goal": "three", "search_mode": "unfocused", "module_tag": None, "target_files": []},
                     ]
                 }
             )
@@ -226,17 +230,45 @@ def test_create_prompt_no_context(rag_chat):
 def test_normalize_query_plan_deduplicates_and_backfills_from_fallback(rag_chat):
     normalized = rag_chat._normalize_query_plan(
         [
-            {"text": "  Security basics  ", "goal": "overview", "module_tag": "Security"},
-            {"text": "security basics", "goal": "duplicate", "module_tag": "Security"},
+            {"text": "  Security basics  ", "goal": "overview", "search_mode": "focused", "module_tag": "Security", "target_files": []},
+            {"text": "security basics", "goal": "duplicate", "search_mode": "focused", "module_tag": "Security", "target_files": []},
         ],
-        ["Security"],
+        {"tags": {"Security": ["week1.pdf"]}},
         "Explain security basics",
     )
 
-    assert len(normalized) == 3
+    assert len(normalized) == 1
     assert normalized[0]["text"] == "Security basics"
+    assert normalized[0]["search_mode"] == "focused"
     assert normalized[0]["module_tag"] == "Security"
-    assert normalized[1]["text"] != normalized[0]["text"]
+    assert normalized[0]["target_files"] == []
+
+
+def test_normalize_query_plan_filters_unknown_file_targets(rag_chat):
+    normalized = rag_chat._normalize_query_plan(
+        [
+            {
+                "text": "Compare files directly",
+                "goal": "Review named files",
+                "search_mode": "focused",
+                "module_tag": "Exam Papers",
+                "target_files": ["18-19.pdf", "missing.pdf"],
+            }
+        ],
+        {"tags": {"Exam Papers": ["18-19.pdf", "22-23.pdf"]}},
+        "Compare exam papers",
+    )
+
+    assert normalized == [
+        {
+            "query_id": "q1",
+            "text": "Compare files directly",
+            "goal": "Review named files",
+            "search_mode": "focused",
+            "module_tag": "Exam Papers",
+            "target_files": ["18-19.pdf"],
+        }
+    ]
 
 
 def test_normalize_answer_plan_filters_unknown_and_duplicate_filenames(rag_chat):
