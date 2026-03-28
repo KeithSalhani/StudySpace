@@ -1241,6 +1241,17 @@ body.dark-mode .message.bot {
   margin-top: 10px;
 }
 
+.trace-chip-row,
+.trace-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trace-chip-row {
+  justify-content: flex-end;
+}
+
 .trace-progress-step,
 .trace-query-card,
 .trace-run-card,
@@ -1308,6 +1319,62 @@ body.dark-mode .message.bot {
 .trace-run-card,
 .trace-result-card {
   padding: 12px 14px;
+}
+
+.trace-mode-pill,
+.trace-target-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.trace-mode-pill {
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trace-mode-pill.compact {
+  padding: 6px 10px;
+}
+
+.trace-mode-pill.mode-unfocused {
+  background: color-mix(in srgb, var(--surface) 78%, transparent 22%);
+  border-color: color-mix(in srgb, var(--text-soft) 18%, var(--border) 82%);
+  color: var(--text-muted);
+}
+
+.trace-mode-pill.mode-focused {
+  background: color-mix(in srgb, var(--accent-soft) 82%, transparent 18%);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border) 72%);
+  color: var(--accent-strong);
+}
+
+.trace-mode-pill.mode-full-document {
+  background: color-mix(in srgb, var(--success-soft) 88%, transparent 12%);
+  border-color: color-mix(in srgb, var(--success) 28%, var(--border) 72%);
+  color: var(--success);
+}
+
+.trace-mode-pill.mode-fallback-document {
+  background: color-mix(in srgb, var(--accent-mint) 12%, var(--surface) 88%);
+  border-color: color-mix(in srgb, var(--accent-mint) 26%, var(--border) 74%);
+  color: var(--success);
+}
+
+.trace-target-list {
+  margin-top: 10px;
+}
+
+.trace-target-pill {
+  padding: 4px 9px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--surface) 76%, transparent 24%);
+  color: var(--text-muted);
 }
 
 .trace-query-id,
