@@ -121,6 +121,69 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000`, create an account, and use the workspace.
 
+## Docker
+
+The repository includes a production-style Docker setup for local use with Docker Compose.
+
+### Prerequisites
+
+- Docker Engine with Compose support
+- A valid `GEMINI_API_KEY`
+
+### Configure
+
+Create a local env file from the template:
+
+```bash
+cp .env.docker.example .env
+```
+
+Set `GEMINI_API_KEY` in `.env` before starting the stack.
+
+### Start The Stack
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- `app` on `http://127.0.0.1:8000`
+- `mongo` as the internal database service
+
+Persistent data is stored in named Docker volumes for:
+
+- MongoDB data
+- Chroma embeddings at `app/chroma_db`
+- user uploads and processed files under `app/users`
+
+### Optional GPU Profile
+
+The default stack is CPU-only. There is also an optional GPU service profile:
+
+```bash
+docker compose --profile gpu up --build app-gpu mongo
+```
+
+Notes:
+
+- This requires NVIDIA Container Toolkit and a compatible host setup.
+- The current application still defaults major workloads to CPU in code, so the GPU profile is mainly an environment path for future GPU-enabled changes.
+
+### Stop Or Reset
+
+Stop the stack without deleting data:
+
+```bash
+docker compose down
+```
+
+Stop the stack and remove all persisted Docker volumes:
+
+```bash
+docker compose down -v
+```
+
 ## Migrating Legacy `db.json`
 
 If you have legacy JSON-backed data, import it into MongoDB with:
@@ -222,6 +285,7 @@ Useful commands:
 ./.venv/bin/python -m pytest tests/test_mongo_db.py
 ./.venv/bin/python -m coverage run --source=app -m pytest tests
 cd frontend && npm run build
+docker compose config
 ```
 
 Notes:
