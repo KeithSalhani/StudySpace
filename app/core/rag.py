@@ -70,7 +70,7 @@ class RAGChat:
             planning_ms = round((time.perf_counter() - planning_started) * 1000, 1)
 
             retrieval_started = time.perf_counter()
-            retrieval_runs = self._execute_search_plan(
+            retrieval_runs, direct_full_document_sources, direct_full_document_fetches = self._execute_search_plan(
                 planned_queries,
                 owner_username=owner_username,
                 selected_files=selected_files,
@@ -84,6 +84,8 @@ class RAGChat:
                 message=message,
                 owner_username=owner_username,
                 fused_results=fused_results,
+                direct_full_document_sources=direct_full_document_sources,
+                direct_full_document_fetches=direct_full_document_fetches,
             )
             generation_ms = round((time.perf_counter() - generation_started) * 1000, 1)
 
@@ -190,7 +192,7 @@ Return JSON with this exact shape:
     {{
       "text": "search query or document-review label",
       "goal": "what this step is trying to retrieve",
-      "search_mode": "unfocused | focused",
+      "search_mode": "unfocused | focused | full_document",
       "module_tag": "one exact tag from the catalog or null",
       "target_files": ["exact filename from the catalog"]
     }}
@@ -200,10 +202,14 @@ Return JSON with this exact shape:
 Rules:
 - `unfocused` means broad chunk retrieval without extra narrowing.
 - `focused` means chunk retrieval narrowed by an exact tag, exact files, or both.
+- `full_document` means read one or more exact files directly.
+- Use `full_document` when the user explicitly names specific files/papers or asks to compare a small set of exact files.
 - Keep `text` short and search-friendly for `unfocused` and `focused`.
 - `module_tag` must be one exact tag from the catalog or null.
 - `target_files` must contain only exact filenames from the catalog.
 - Never invent tags or files outside the catalog.
+- If `full_document` is used, include at least one target file.
+- Prefer at most {self.FULL_DOCUMENT_FETCH_LIMIT} target files for a `full_document` step.
 
 Selected files: {selected_files_label}
 Workspace catalog:
@@ -253,6 +259,8 @@ User question: {message}
             target_files = self._normalize_target_files(item.get("target_files"), available_files)
             search_mode = self._normalize_search_mode(item.get("search_mode"), module_tag, target_files)
             text = " ".join(str(item.get("text", "")).split())
+            if not text and search_mode == "full_document" and target_files:
+                text = f"Read full document: {', '.join(target_files)}"
             if not text:
                 continue
 
@@ -261,6 +269,8 @@ User question: {message}
                 target_files = []
             elif search_mode == "focused" and not module_tag and not target_files:
                 search_mode = "unfocused"
+            elif search_mode == "full_document" and not target_files:
+                search_mode = "focused" if module_tag else "unfocused"
 
             dedupe_key = (
                 search_mode,
@@ -302,6 +312,18 @@ User question: {message}
         inferred_tag = self._infer_module_tag(base_message, available_tags)
         inferred_files = self._infer_target_files(base_message, available_files)
 
+        if inferred_files:
+            return [
+                {
+                    "query_id": "q1",
+                    "text": f"Read full document: {', '.join(inferred_files)}",
+                    "goal": "Read the explicitly referenced files directly.",
+                    "search_mode": "full_document",
+                    "module_tag": None,
+                    "target_files": inferred_files[: self.FULL_DOCUMENT_FETCH_LIMIT],
+                }
+            ]
+
         variants = [
             base_message,
             f"Core concepts and definitions for {base_message}",
@@ -315,7 +337,7 @@ User question: {message}
                 "goal": goal,
                 "search_mode": "focused" if inferred_tag else "unfocused",
                 "module_tag": inferred_tag,
-                "target_files": inferred_files if index == 0 else [],
+                "target_files": [],
             }
             for index, (variant, goal) in enumerate(
                 zip(
@@ -393,6 +415,8 @@ User question: {message}
                 return "unfocused"
             if lowered in {"focused", "narrow", "filtered"}:
                 return "focused"
+            if lowered in {"full_document", "full_doc", "document", "fulltext"}:
+                return "full_document"
 
         if target_files:
             return "focused"
@@ -406,15 +430,41 @@ User question: {message}
         owner_username: str,
         selected_files: Optional[List[str]],
         workspace_catalog: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         available_tags = sorted((workspace_catalog.get("tags") or {}).keys())
         available_files = self._get_catalog_files(workspace_catalog)
         retrieval_runs: List[Dict[str, Any]] = []
+        direct_full_document_sources: List[Dict[str, Any]] = []
+        direct_full_document_fetches: List[Dict[str, Any]] = []
 
         for item in planned_queries:
             module_tag = self._normalize_module_tag(item.get("module_tag"), available_tags)
             search_mode = self._normalize_search_mode(item.get("search_mode"), module_tag, item.get("target_files") or [])
             target_files = self._normalize_target_files(item.get("target_files"), available_files)
+
+            if search_mode == "full_document":
+                fetched_sources, fetched_fetches = self._fetch_full_document_sources(
+                    owner_username=owner_username,
+                    filenames=target_files,
+                    reason=item["goal"],
+                    query_id=item["query_id"],
+                    start_index=len(direct_full_document_sources) + 1,
+                    planned=True,
+                )
+                direct_full_document_sources.extend(fetched_sources)
+                direct_full_document_fetches.extend(fetched_fetches)
+                retrieval_runs.append(
+                    {
+                        "query_id": item["query_id"],
+                        "query": item["text"],
+                        "goal": item["goal"],
+                        "search_mode": search_mode,
+                        "module_tag": module_tag,
+                        "target_files": target_files,
+                        "results": [],
+                    }
+                )
+                continue
 
             active_files = target_files or selected_files
             active_tags = [module_tag] if module_tag else None
@@ -445,7 +495,50 @@ User question: {message}
                 }
             )
 
-        return retrieval_runs
+        return retrieval_runs, direct_full_document_sources, direct_full_document_fetches
+
+    def _fetch_full_document_sources(
+        self,
+        owner_username: str,
+        filenames: List[str],
+        reason: str,
+        query_id: str,
+        start_index: int = 1,
+        planned: bool = False,
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        full_document_sources: List[Dict[str, Any]] = []
+        full_document_fetches: List[Dict[str, Any]] = []
+
+        for index, filename in enumerate(filenames[: self.FULL_DOCUMENT_FETCH_LIMIT], start=start_index):
+            document_payload = self.vector_store.get_full_document_content(owner_username, filename)
+            if not document_payload or not (document_payload.get("content") or "").strip():
+                continue
+
+            source_id = f"F{index}"
+            full_document_sources.append(
+                {
+                    "source_id": source_id,
+                    "doc_id": None,
+                    "filename": filename,
+                    "chunk_index": None,
+                    "distance": None,
+                    "tag": document_payload.get("tag"),
+                    "source_type": "full_document",
+                }
+            )
+            full_document_fetches.append(
+                {
+                    "source_id": source_id,
+                    "filename": filename,
+                    "tag": document_payload.get("tag"),
+                    "source": document_payload.get("source"),
+                    "reason": reason,
+                    "query_id": query_id,
+                    "search_mode": "full_document" if planned else "fallback_full_document",
+                }
+            )
+
+        return full_document_sources, full_document_fetches
 
     def _serialize_search_result(
         self,
@@ -548,7 +641,27 @@ User question: {message}
         message: str,
         owner_username: str,
         fused_results: List[Dict[str, Any]],
+        direct_full_document_sources: Optional[List[Dict[str, Any]]] = None,
+        direct_full_document_fetches: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        if direct_full_document_sources:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=self._create_augmented_prompt(
+                    message,
+                    fused_results,
+                    direct_full_document_sources,
+                    owner_username,
+                ),
+            )
+            if not response.text:
+                raise ValueError("Empty response from Gemini")
+            return {
+                "response": response.text,
+                "full_document_sources": list(direct_full_document_sources),
+                "full_document_fetches": list(direct_full_document_fetches or []),
+            }
+
         answer_plan = self._assess_retrieved_evidence(message, fused_results)
 
         full_document_sources: List[Dict[str, Any]] = []
@@ -556,32 +669,14 @@ User question: {message}
 
         requested_filenames = answer_plan.get("full_document_filenames") or []
         if answer_plan.get("needs_full_documents") and requested_filenames:
-            for index, filename in enumerate(requested_filenames[: self.FULL_DOCUMENT_FETCH_LIMIT], start=1):
-                document_payload = self.vector_store.get_full_document_content(owner_username, filename)
-                if not document_payload or not (document_payload.get("content") or "").strip():
-                    continue
-
-                source_id = f"F{index}"
-                full_document_sources.append(
-                    {
-                        "source_id": source_id,
-                        "doc_id": None,
-                        "filename": filename,
-                        "chunk_index": None,
-                        "distance": None,
-                        "tag": document_payload.get("tag"),
-                        "source_type": "full_document",
-                    }
-                )
-                full_document_fetches.append(
-                    {
-                        "source_id": source_id,
-                        "filename": filename,
-                        "tag": document_payload.get("tag"),
-                        "source": document_payload.get("source"),
-                        "reason": answer_plan.get("missing_information"),
-                    }
-                )
+            full_document_sources, full_document_fetches = self._fetch_full_document_sources(
+                owner_username=owner_username,
+                filenames=requested_filenames,
+                reason=answer_plan.get("missing_information") or "",
+                query_id="fallback",
+                start_index=1,
+                planned=False,
+            )
 
         if full_document_sources:
             response = self.client.models.generate_content(

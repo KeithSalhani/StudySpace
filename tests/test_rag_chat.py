@@ -168,6 +168,95 @@ def test_chat_with_selected_files_can_add_exact_file_and_tag_focus(rag_chat, moc
     assert mock_vector_store.search.call_args.kwargs["selected_tags"] == ["Security"]
 
 
+def test_chat_full_document_plan_reads_exact_files_directly(rag_chat, mock_vector_store, mock_genai):
+    mock_client = mock_genai.Client.return_value
+    mock_client.models.generate_content.side_effect = [
+        make_response(
+            json.dumps(
+                {
+                    "queries": [
+                        {
+                            "text": "Compare the named exam papers directly",
+                            "goal": "Read the requested papers in full.",
+                            "search_mode": "full_document",
+                            "module_tag": "Exam Papers",
+                            "target_files": ["18-19.pdf", "22-23.pdf"],
+                        }
+                    ]
+                }
+            )
+        ),
+        make_response("Direct full-document answer [F1] [F2]"),
+    ]
+    mock_vector_store.list_documents.return_value = [
+        {"filename": "18-19.pdf", "tag": "Exam Papers"},
+        {"filename": "22-23.pdf", "tag": "Exam Papers"},
+    ]
+    mock_vector_store.get_full_document_content.side_effect = [
+        {"filename": "18-19.pdf", "tag": "Exam Papers", "content": "Paper 18-19 full text", "source": "processed_markdown"},
+        {"filename": "22-23.pdf", "tag": "Exam Papers", "content": "Paper 22-23 full text", "source": "processed_markdown"},
+        {"filename": "18-19.pdf", "tag": "Exam Papers", "content": "Paper 18-19 full text", "source": "processed_markdown"},
+        {"filename": "22-23.pdf", "tag": "Exam Papers", "content": "Paper 22-23 full text", "source": "processed_markdown"},
+    ]
+
+    payload = rag_chat.chat("Compare 18-19.pdf and 22-23.pdf", owner_username="alice")
+
+    assert payload["response"] == "Direct full-document answer [F1] [F2]"
+    assert payload["trace"]["generated_queries"] == [
+        {
+            "id": "q1",
+            "text": "Compare the named exam papers directly",
+            "goal": "Read the requested papers in full.",
+            "search_mode": "full_document",
+            "module_tag": "Exam Papers",
+            "target_files": ["18-19.pdf", "22-23.pdf"],
+            "results_found": 0,
+        }
+    ]
+    assert payload["trace"]["full_document_fetches"] == [
+        {
+            "source_id": "F1",
+            "filename": "18-19.pdf",
+            "tag": "Exam Papers",
+            "source": "processed_markdown",
+            "reason": "Read the requested papers in full.",
+            "query_id": "q1",
+            "search_mode": "full_document",
+        },
+        {
+            "source_id": "F2",
+            "filename": "22-23.pdf",
+            "tag": "Exam Papers",
+            "source": "processed_markdown",
+            "reason": "Read the requested papers in full.",
+            "query_id": "q1",
+            "search_mode": "full_document",
+        },
+    ]
+    assert payload["sources"] == [
+        {
+            "source_id": "F1",
+            "doc_id": None,
+            "filename": "18-19.pdf",
+            "chunk_index": None,
+            "distance": None,
+            "tag": "Exam Papers",
+            "source_type": "full_document",
+        },
+        {
+            "source_id": "F2",
+            "doc_id": None,
+            "filename": "22-23.pdf",
+            "chunk_index": None,
+            "distance": None,
+            "tag": "Exam Papers",
+            "source_type": "full_document",
+        },
+    ]
+    assert mock_vector_store.search.call_count == 0
+    assert mock_client.models.generate_content.call_count == 2
+
+
 def test_chat_empty_response_raises(rag_chat, mock_vector_store, mock_genai):
     mock_client = mock_genai.Client.return_value
     mock_client.models.generate_content.side_effect = [
@@ -250,7 +339,7 @@ def test_normalize_query_plan_filters_unknown_file_targets(rag_chat):
             {
                 "text": "Compare files directly",
                 "goal": "Review named files",
-                "search_mode": "focused",
+                "search_mode": "full_document",
                 "module_tag": "Exam Papers",
                 "target_files": ["18-19.pdf", "missing.pdf"],
             }
@@ -264,7 +353,7 @@ def test_normalize_query_plan_filters_unknown_file_targets(rag_chat):
             "query_id": "q1",
             "text": "Compare files directly",
             "goal": "Review named files",
-            "search_mode": "focused",
+            "search_mode": "full_document",
             "module_tag": "Exam Papers",
             "target_files": ["18-19.pdf"],
         }
@@ -366,6 +455,8 @@ def test_generate_response_with_document_fallback_uses_full_documents(rag_chat, 
             "tag": "Security",
             "source": "processed_markdown",
             "reason": "Need the full explanation",
+            "query_id": "fallback",
+            "search_mode": "fallback_full_document",
         }
     ]
 
