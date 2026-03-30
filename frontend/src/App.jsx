@@ -238,20 +238,38 @@ function useDialog(open, onClose) {
 
       const first = items[0];
       const last = items[items.length - 1];
+      const activeElement = document.activeElement;
 
-      if (event.shiftKey && document.activeElement === first) {
+      if (!dialogNode.contains(activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+
+      if (event.shiftKey && activeElement === first) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && activeElement === last) {
         event.preventDefault();
         first.focus();
       }
     }
 
+    function handleFocusIn(event) {
+      if (dialogNode.contains(event.target)) {
+        return;
+      }
+
+      const items = getFocusableElements(dialogNode);
+      (items[0] || dialogNode).focus();
+    }
+
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", handleFocusIn);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", handleFocusIn);
       if (previousActiveElement instanceof HTMLElement) {
         previousActiveElement.focus();
       }
@@ -1505,58 +1523,68 @@ export default function App() {
       return;
     }
 
-    const SpeechRecognition = getSpeechRecognitionConstructor();
-    const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+    try {
+      const SpeechRecognition = getSpeechRecognitionConstructor();
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => {
-      setSpeechError("");
-      setIsListening(true);
-      speechBaseInputRef.current = chatInput.trim();
-      speechCommittedTextRef.current = "";
-      announce("Voice input started.");
-    };
+      recognition.onstart = () => {
+        setSpeechError("");
+        setIsListening(true);
+        speechBaseInputRef.current = chatInput.trim();
+        speechCommittedTextRef.current = "";
+        announce("Voice input started.");
+      };
 
-    recognition.onerror = (event) => {
-      const message = getSpeechErrorMessage(event.error);
+      recognition.onerror = (event) => {
+        const message = getSpeechErrorMessage(event.error);
+        setSpeechError(message);
+        setIsListening(false);
+        announce(message);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        let committedText = speechCommittedTextRef.current;
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const transcript = result[0]?.transcript?.trim() || "";
+
+          if (!transcript) {
+            continue;
+          }
+
+          if (result.isFinal) {
+            committedText = [committedText, transcript].filter(Boolean).join(" ").trim();
+          } else {
+            interimTranscript = [interimTranscript, transcript].filter(Boolean).join(" ").trim();
+          }
+        }
+
+        speechCommittedTextRef.current = committedText;
+        setChatInput(
+          [speechBaseInputRef.current, committedText, interimTranscript].filter(Boolean).join(" ").trim()
+        );
+      };
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (error) {
+      speechRecognitionRef.current = null;
+      setIsListening(false);
+      const message = error?.name
+        ? getSpeechErrorMessage(error.name)
+        : "Voice input could not be started in this browser.";
       setSpeechError(message);
-      setIsListening(false);
       announce(message);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onresult = (event) => {
-      let interimTranscript = "";
-      let committedText = speechCommittedTextRef.current;
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const transcript = result[0]?.transcript?.trim() || "";
-
-        if (!transcript) {
-          continue;
-        }
-
-        if (result.isFinal) {
-          committedText = [committedText, transcript].filter(Boolean).join(" ").trim();
-        } else {
-          interimTranscript = [interimTranscript, transcript].filter(Boolean).join(" ").trim();
-        }
-      }
-
-      speechCommittedTextRef.current = committedText;
-      setChatInput(
-        [speechBaseInputRef.current, committedText, interimTranscript].filter(Boolean).join(" ").trim()
-      );
-    };
-
-    speechRecognitionRef.current = recognition;
-    recognition.start();
+    }
   }
 
   async function handleGenerateFlashcards() {

@@ -255,7 +255,7 @@ export default function Calendar({ events = [], topics = [], accessibility = {} 
                       key={dIdx}
                       className={`fc-day-cell ${day.isCurrentMonth ? '' : 'fc-day-other-month'}`}
                       role="gridcell"
-                      aria-selected={day.isToday}
+                      aria-current={day.isToday ? "date" : undefined}
                       aria-label={`${day.date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}${day.events.length ? `. ${day.events.length} events.` : ". No events."}`}
                     >
                       <div className={`fc-day-number ${day.isToday ? 'fc-day-today' : ''}`}>
