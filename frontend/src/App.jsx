@@ -26,6 +26,15 @@ import {
 
 const COMPLETED_UPLOAD_VISIBLE_MS = 4000;
 const MOBILE_BREAKPOINT = 900;
+const ACCESSIBILITY_STORAGE_KEY = "studyspace-accessibility-settings";
+const DEFAULT_ACCESSIBILITY_SETTINGS = {
+  voiceInput: false,
+  enhancedFocus: false,
+  largerText: false,
+  highContrast: false,
+  reducedMotion: false,
+  announceUpdates: true
+};
 
 const initialMessages = [];
 
@@ -34,6 +43,94 @@ const starterQuestions = [
   "Create an exam prep checklist.",
   "Explain the difficult concepts."
 ];
+
+function getAccessibilitySettings() {
+  if (typeof window === "undefined") {
+    return DEFAULT_ACCESSIBILITY_SETTINGS;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(ACCESSIBILITY_STORAGE_KEY);
+    if (!raw) {
+      return DEFAULT_ACCESSIBILITY_SETTINGS;
+    }
+
+    return {
+      ...DEFAULT_ACCESSIBILITY_SETTINGS,
+      ...JSON.parse(raw)
+    };
+  } catch (_error) {
+    return DEFAULT_ACCESSIBILITY_SETTINGS;
+  }
+}
+
+function getFocusableElements(container) {
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(
+    container.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+  );
+}
+
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function getVoiceInputAvailability() {
+  const SpeechRecognition = getSpeechRecognitionConstructor();
+
+  if (!SpeechRecognition) {
+    return {
+      supported: false,
+      reason: "This browser does not provide built-in speech recognition."
+    };
+  }
+
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return {
+      supported: false,
+      reason: "Voice input requires a secure context such as localhost or HTTPS."
+    };
+  }
+
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return {
+      supported: false,
+      reason: "Voice input needs an internet connection for browser speech recognition."
+    };
+  }
+
+  return {
+    supported: true,
+    reason: ""
+  };
+}
+
+function getSpeechErrorMessage(errorCode) {
+  switch (errorCode) {
+    case "network":
+      return "Voice input could not reach the browser speech service. Check your internet connection, microphone permission, and try Chrome or Edge.";
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Microphone access was blocked. Allow microphone permission in the browser and try again.";
+    case "audio-capture":
+      return "No working microphone was found. Check your input device and browser microphone selection.";
+    case "no-speech":
+      return "No speech was detected. Try again and speak after the microphone indicator turns on.";
+    case "aborted":
+      return "Voice input was interrupted before transcription finished.";
+    default:
+      return `Voice input failed: ${errorCode}.`;
+  }
+}
 
 function normalizeDocument(doc) {
   if (typeof doc === "string") {
@@ -105,6 +202,89 @@ function formatTraceTiming(value) {
   }
 
   return `${Math.round(value)}ms`;
+}
+
+function useDialog(open, onClose) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (!open || !dialogRef.current) {
+      return undefined;
+    }
+
+    const dialogNode = dialogRef.current;
+    const previousActiveElement = document.activeElement;
+    const focusables = getFocusableElements(dialogNode);
+
+    (focusables[0] || dialogNode).focus();
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const items = getFocusableElements(dialogNode);
+      if (!items.length) {
+        event.preventDefault();
+        dialogNode.focus();
+        return;
+      }
+
+      const first = items[0];
+      const last = items[items.length - 1];
+      const activeElement = document.activeElement;
+
+      if (!dialogNode.contains(activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    function handleFocusIn(event) {
+      if (dialogNode.contains(event.target)) {
+        return;
+      }
+
+      const items = getFocusableElements(dialogNode);
+      (items[0] || dialogNode).focus();
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", handleFocusIn);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      if (previousActiveElement instanceof HTMLElement) {
+        previousActiveElement.focus();
+      }
+    };
+  }, [open, onClose]);
+
+  return dialogRef;
+}
+
+function VisuallyHidden({ children, as: Component = "span", ...props }) {
+  return (
+    <Component className="sr-only" {...props}>
+      {children}
+    </Component>
+  );
 }
 
 function MessageContent({ message }) {
@@ -378,13 +558,24 @@ function AuthScreen({
 function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
   const cards = state.data?.cards || [];
   const currentCard = cards[state.index];
+  const dialogRef = useDialog(true, onClose);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="flashcards-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="modal-head">
           <div>
-            <div className="chat-title">{state.data?.title || "Flashcards"}</div>
+            <div id="flashcards-title" className="chat-title">
+              {state.data?.title || "Flashcards"}
+            </div>
             <div className="header-subtitle">
               {state.loading
                 ? "Cooking up a fresh flashcard deck from the selected source."
@@ -404,7 +595,12 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
             <div className="empty-state error-text">{state.error}</div>
           ) : currentCard ? (
             <>
-              <div className="flashcard" onClick={onFlip}>
+              <button
+                className="flashcard"
+                type="button"
+                onClick={onFlip}
+                aria-label={`Flip flashcard ${state.index + 1} of ${cards.length}`}
+              >
                 <div>
                   <div className="flashcard-label">
                     {state.side === "front" ? "Prompt" : "Answer"}
@@ -413,7 +609,7 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
                     {state.side === "front" ? currentCard.front : currentCard.back}
                   </div>
                 </div>
-              </div>
+              </button>
               <div className="flashcard-controls">
                 <button
                   className="modal-button"
@@ -450,13 +646,22 @@ function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
 
 function QuizModal({ state, onClose, onAnswer }) {
   const questions = state.data?.questions || [];
+  const dialogRef = useDialog(true, onClose);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quiz-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="modal-head">
           <div>
-            <div className="chat-title">{state.data?.title || "Quiz"}</div>
+            <div id="quiz-title" className="chat-title">{state.data?.title || "Quiz"}</div>
             <div className="header-subtitle">
               {state.loading
                 ? "Building a question set from the selected source."
@@ -560,14 +765,28 @@ function SettingsModal({
   tagDraft,
   onTagDraftChange,
   onAddTag,
-  onDeleteTag
+  onDeleteTag,
+  accessibility,
+  onToggleAccessibility,
+  voiceInputStatus
 }) {
+  const dialogRef = useDialog(true, onClose);
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '600px' }}>
+      <div
+        ref={dialogRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        style={{ maxWidth: "600px" }}
+      >
         <div className="modal-head">
           <div>
-            <div className="chat-title">Settings</div>
+            <div id="settings-title" className="chat-title">Settings</div>
             <div className="header-subtitle">
               Manage topics, sections, and global workspace preferences.
             </div>
@@ -580,12 +799,12 @@ function SettingsModal({
           <section className="section">
             <div className="section-head">
               <div className="section-title">Topics</div>
-              <div className="helper-text">{tags.length} active lens{tags.length === 1 ? '' : 'es'}</div>
+            <div className="helper-text">{tags.length} active lens{tags.length === 1 ? "" : "es"}</div>
             </div>
-            <p className="meta-text" style={{ marginBottom: '16px' }}>
+            <p className="meta-text" style={{ marginBottom: "16px" }}>
               Topics act as academic filters for your documents and insights.
             </p>
-            <div className="tags-wrap" style={{ marginBottom: '20px' }}>
+            <div className="tags-wrap" style={{ marginBottom: "20px" }}>
               {tags.length ? (
                 tags.map((tag) => (
                   <div key={tag} className="tag-chip">
@@ -623,6 +842,88 @@ function SettingsModal({
               >
                 Add
               </button>
+            </div>
+          </section>
+
+          <section className="section" style={{ marginTop: "32px" }}>
+            <div className="section-head">
+              <div className="section-title">Accessibility</div>
+              <div className="helper-text">Opt-in</div>
+            </div>
+            <p className="meta-text" style={{ marginBottom: "16px" }}>
+              Enable only the support features you want. Regular users keep the existing experience.
+            </p>
+            <div className="settings-toggle-list">
+              <label className="settings-toggle">
+                <div>
+                  <div className="settings-toggle-title">Voice input for chat</div>
+                  <div className="meta-text">
+                    Show a microphone in the composer and convert speech to text.
+                    {!voiceInputStatus.supported ? ` ${voiceInputStatus.reason}` : ""}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={accessibility.voiceInput}
+                  disabled={!voiceInputStatus.supported}
+                  onChange={() => onToggleAccessibility("voiceInput")}
+                />
+              </label>
+              <label className="settings-toggle">
+                <div>
+                  <div className="settings-toggle-title">Enhanced focus indicators</div>
+                  <div className="meta-text">Use stronger outlines and control separation so keyboard focus stands out immediately.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={accessibility.enhancedFocus}
+                  onChange={() => onToggleAccessibility("enhancedFocus")}
+                />
+              </label>
+              <label className="settings-toggle">
+                <div>
+                  <div className="settings-toggle-title">Larger text and spacing</div>
+                  <div className="meta-text">Increase reading comfort in chat, notes, and side panels.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={accessibility.largerText}
+                  onChange={() => onToggleAccessibility("largerText")}
+                />
+              </label>
+              <label className="settings-toggle">
+                <div>
+                  <div className="settings-toggle-title">Higher contrast surfaces</div>
+                  <div className="meta-text">Use darker borders, brighter surfaces, and stronger text contrast across the workspace.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={accessibility.highContrast}
+                  onChange={() => onToggleAccessibility("highContrast")}
+                />
+              </label>
+              <label className="settings-toggle">
+                <div>
+                  <div className="settings-toggle-title">Reduce motion</div>
+                  <div className="meta-text">Minimize animated transitions and pulsing effects.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={accessibility.reducedMotion}
+                  onChange={() => onToggleAccessibility("reducedMotion")}
+                />
+              </label>
+              <label className="settings-toggle">
+                <div>
+                  <div className="settings-toggle-title">Screen reader status updates</div>
+                  <div className="meta-text">Announce uploads, chat progress, and generation events.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={accessibility.announceUpdates}
+                  onChange={() => onToggleAccessibility("announceUpdates")}
+                />
+              </label>
             </div>
           </section>
 
@@ -690,14 +991,32 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState("chat");
   const [viewMode, setViewMode] = useState("workspace");
   const [showSettings, setShowSettings] = useState(false);
+  const [accessibility, setAccessibility] = useState(getAccessibilitySettings);
+  const [liveRegionMessage, setLiveRegionMessage] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState("");
 
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
   const seenCompletedJobsRef = useRef(new Set());
   const wasMobileRef = useRef(getViewportState().isMobile);
+  const speechRecognitionRef = useRef(null);
+  const speechBaseInputRef = useRef("");
+  const speechCommittedTextRef = useRef("");
 
   function showError(message) {
     setErrorBanner(message);
+  }
+
+  function announce(message) {
+    if (!message || !accessibility.announceUpdates) {
+      return;
+    }
+
+    setLiveRegionMessage("");
+    window.setTimeout(() => {
+      setLiveRegionMessage(message);
+    }, 40);
   }
 
   function resetWorkspaceState() {
@@ -714,6 +1033,10 @@ export default function App() {
     setTagDraft("");
     setNoteDraft("");
     setErrorBanner("");
+    setSpeechError("");
+    setLiveRegionMessage("");
+    setIsListening(false);
+    speechRecognitionRef.current?.stop();
     setFlashcardState({
       open: false,
       loading: false,
@@ -743,6 +1066,30 @@ export default function App() {
     document.body.classList.toggle("dark-mode", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.body.classList.toggle("a11y-enhanced-focus", accessibility.enhancedFocus);
+    document.body.classList.toggle("a11y-larger-text", accessibility.largerText);
+    document.body.classList.toggle("a11y-high-contrast", accessibility.highContrast);
+    document.body.classList.toggle("a11y-reduced-motion", accessibility.reducedMotion);
+    window.localStorage.setItem(ACCESSIBILITY_STORAGE_KEY, JSON.stringify(accessibility));
+  }, [accessibility]);
+
+  useEffect(() => {
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!accessibility.voiceInput && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
+      setSpeechError("");
+    }
+  }, [accessibility.voiceInput]);
 
   useEffect(() => {
     if (!errorBanner) {
@@ -931,6 +1278,10 @@ export default function App() {
         if (job.status === "completed" && !seenCompletedJobsRef.current.has(job.job_id)) {
           seenCompletedJobsRef.current.add(job.job_id);
           refreshDocuments = true;
+          announce(`Upload complete for ${job.filename}.`);
+        } else if (job.status === "failed" && !seenCompletedJobsRef.current.has(job.job_id)) {
+          seenCompletedJobsRef.current.add(job.job_id);
+          announce(`Upload failed for ${job.filename}.`);
         }
       });
 
@@ -957,6 +1308,7 @@ export default function App() {
     for (const file of fileList) {
       try {
         await uploadDocument(file);
+        announce(`Started upload for ${file.name}.`);
       } catch (error) {
         if (isUnauthorizedError(error)) {
           handleUnauthorized();
@@ -979,6 +1331,7 @@ export default function App() {
       await createTag(value);
       setTags((prev) => [...prev, value]);
       setTagDraft("");
+      announce(`Added topic ${value}.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -992,6 +1345,7 @@ export default function App() {
     try {
       await removeTag(tag);
       setTags((prev) => prev.filter((item) => item !== tag));
+      announce(`Removed topic ${tag}.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1011,6 +1365,7 @@ export default function App() {
       const payload = await createNote(value);
       setNotes((prev) => [payload.note, ...prev]);
       setNoteDraft("");
+      announce("Note saved.");
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1024,6 +1379,7 @@ export default function App() {
     try {
       await removeNote(noteId);
       setNotes((prev) => prev.filter((note) => note.id !== noteId));
+      announce("Note deleted.");
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1042,6 +1398,7 @@ export default function App() {
       await deleteDocument(filename);
       await loadDocumentsList();
       await loadMetadata();
+      announce(`Deleted ${filename}.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1056,6 +1413,7 @@ export default function App() {
       await updateDocumentTag(filename, newTag);
       await loadDocumentsList();
       await loadTagsAndNotes(); // since adding a tag can create a new one
+      announce(`Updated topic for ${filename}.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1070,6 +1428,11 @@ export default function App() {
     const message = chatInput.trim();
     if (!message || isSending) {
       return;
+    }
+
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsListening(false);
     }
 
     const selected = Array.from(selectedFiles);
@@ -1095,6 +1458,7 @@ export default function App() {
     setChatInput("");
     setIsSending(true);
     setErrorBanner("");
+    announce("Sending question to Study Space.");
 
     try {
       const payload = await sendChatMessage(message, selected);
@@ -1111,6 +1475,7 @@ export default function App() {
             : entry
         )
       ]);
+      announce("Answer ready.");
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1129,8 +1494,96 @@ export default function App() {
             : entry
         )
       ]);
+      announce("Chat request failed.");
     } finally {
       setIsSending(false);
+    }
+  }
+
+  function handleToggleAccessibility(key) {
+    setAccessibility((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  }
+
+  function toggleVoiceInput() {
+    if (isListening) {
+      speechRecognitionRef.current?.stop();
+      setIsListening(false);
+      announce("Voice input stopped.");
+      return;
+    }
+
+    const availability = getVoiceInputAvailability();
+    if (!availability.supported) {
+      const message = availability.reason;
+      setSpeechError(message);
+      announce(message);
+      return;
+    }
+
+    try {
+      const SpeechRecognition = getSpeechRecognitionConstructor();
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setSpeechError("");
+        setIsListening(true);
+        speechBaseInputRef.current = chatInput.trim();
+        speechCommittedTextRef.current = "";
+        announce("Voice input started.");
+      };
+
+      recognition.onerror = (event) => {
+        const message = getSpeechErrorMessage(event.error);
+        setSpeechError(message);
+        setIsListening(false);
+        announce(message);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        let committedText = speechCommittedTextRef.current;
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const transcript = result[0]?.transcript?.trim() || "";
+
+          if (!transcript) {
+            continue;
+          }
+
+          if (result.isFinal) {
+            committedText = [committedText, transcript].filter(Boolean).join(" ").trim();
+          } else {
+            interimTranscript = [interimTranscript, transcript].filter(Boolean).join(" ").trim();
+          }
+        }
+
+        speechCommittedTextRef.current = committedText;
+        setChatInput(
+          [speechBaseInputRef.current, committedText, interimTranscript].filter(Boolean).join(" ").trim()
+        );
+      };
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (error) {
+      speechRecognitionRef.current = null;
+      setIsListening(false);
+      const message = error?.name
+        ? getSpeechErrorMessage(error.name)
+        : "Voice input could not be started in this browser.";
+      setSpeechError(message);
+      announce(message);
     }
   }
 
@@ -1138,6 +1591,8 @@ export default function App() {
     if (!selectedDocument) {
       return;
     }
+
+    announce(`Generating flashcards for ${selectedDocument}.`);
 
     setFlashcardState({
       open: true,
@@ -1158,6 +1613,7 @@ export default function App() {
         side: "front",
         index: 0
       });
+      announce("Flashcards ready.");
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1171,6 +1627,7 @@ export default function App() {
         side: "front",
         index: 0
       });
+      announce("Flashcard generation failed.");
     }
   }
 
@@ -1178,6 +1635,8 @@ export default function App() {
     if (!selectedDocument) {
       return;
     }
+
+    announce(`Generating quiz for ${selectedDocument}.`);
 
     setQuizState({
       open: true,
@@ -1196,6 +1655,7 @@ export default function App() {
         data: payload,
         answers: {}
       });
+      announce("Quiz ready.");
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1208,6 +1668,7 @@ export default function App() {
         data: null,
         answers: {}
       });
+      announce("Quiz generation failed.");
     }
   }
 
@@ -1286,6 +1747,7 @@ export default function App() {
     };
   const mobileTabTitle =
     mobileTab === "sources" ? "Sources" : mobileTab === "studio" ? "Studio" : "Chat";
+  const voiceInputStatus = getVoiceInputAvailability();
 
   function renderWorkspaceSections() {
     const groupedDocuments = {};
@@ -1321,7 +1783,16 @@ export default function App() {
           </div>
           <div
             className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload study material"
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             onDragOver={(event) => {
               event.preventDefault();
               setIsDragOver(true);
@@ -1364,7 +1835,14 @@ export default function App() {
                     <div className="upload-job-status">{job.status}</div>
                   </div>
                   <div className="meta-text">{job.stage}</div>
-                  <div className="progress-track">
+                  <div
+                    className="progress-track"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.max(0, Math.min(100, job.progress || 0))}
+                    aria-label={`${job.filename} upload progress`}
+                  >
                     <div
                       className="progress-bar"
                       style={{
@@ -1420,9 +1898,12 @@ export default function App() {
                         <div className="tag-insights" style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           {meta.assessments.length > 0 && (
                             <div className="insight-group">
-                              <div
+                              <button
                                 className="insight-label"
-                                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                type="button"
+                                aria-expanded={isAssessmentsExpanded}
+                                aria-controls={`assessments-${tag}`}
+                                style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                                 onClick={() => {
                                   setExpandedAssessments(prev => {
                                     const next = new Set(prev);
@@ -1434,9 +1915,9 @@ export default function App() {
                               >
                                 Assessments
                                 <span style={{ fontSize: '0.8rem' }}>{isAssessmentsExpanded ? '▲' : '▼'}</span>
-                              </div>
+                              </button>
                               {isAssessmentsExpanded && (
-                                <div className="stack">
+                                <div id={`assessments-${tag}`} className="stack">
                                   {meta.assessments.map((a, i) => (
                                     <div key={i} className="insight-item">
                                       <div className="insight-text">{a.item}</div>
@@ -1491,6 +1972,7 @@ export default function App() {
                                   <select
                                     className="micro-pill"
                                     style={{ border: 'none', appearance: 'none', cursor: 'pointer', outline: 'none', paddingRight: '20px', background: 'rgba(255, 255, 255, 0.2) url("data:image/svg+xml;utf8,<svg fill=%27black%27 height=%2724%27 viewBox=%270 0 24 24%27 width=%2724%27 xmlns=%27http://www.w3.org/2000/svg%27><path d=%27M7 10l5 5 5-5z%27/><path d=%27M0 0h24v24H0z%27 fill=%27none%27/></svg>") no-repeat right 4px center/14px 14px', color: 'inherit' }}
+                                    aria-label={`Topic for ${doc.filename}`}
                                     value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
                                     onChange={(e) => {
                                       if (e.target.value !== (doc.tag || "")) {
@@ -1515,6 +1997,7 @@ export default function App() {
                               className="icon-button"
                               type="button"
                               title="Delete"
+                              aria-label={`Delete ${doc.filename}`}
                               onClick={() => void handleDeleteDocument(doc.filename)}
                             >
                               ×
@@ -1560,6 +2043,7 @@ export default function App() {
           <div className="stack">
             <textarea
               className="textarea"
+              aria-label="New note"
               placeholder="Drop a quick takeaway, quote, or reminder..."
               value={noteDraft}
               onChange={(event) => setNoteDraft(event.currentTarget.value)}
@@ -1584,6 +2068,7 @@ export default function App() {
           <div className="section-title">Source document</div>
           <select
             className="select"
+            aria-label="Source document"
             value={selectedDocument}
             onChange={(event) => setSelectedDocument(event.currentTarget.value)}
           >
@@ -1683,12 +2168,16 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#primary-content">Skip to main content</a>
+      <VisuallyHidden as="div" aria-live="polite" aria-atomic="true">
+        {liveRegionMessage}
+      </VisuallyHidden>
       <div className="app-noise" />
       <div className="orb orb-one" />
       <div className="orb orb-two" />
       <div className="orb orb-three" />
 
-      <div className="app-topbar">
+      <header className="app-topbar">
         <div className="topbar-brand">
           <div className="brand-mark" style={{ background: 'transparent', color: 'var(--accent)', padding: 0, width: 'auto', height: 'auto', display: 'flex', alignItems: 'center' }}>
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1725,14 +2214,15 @@ export default function App() {
             type="button"
             onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
             title="Toggle theme"
+            aria-pressed={theme === "dark"}
           >
             {theme === "dark" ? "☀" : "☾"}
           </button>
         </div>
-      </div>
+      </header>
 
       {viewMode === "workspace" ? (
-        <div className="app-frame" style={frameStyle}>
+        <div id="primary-content" className="app-frame" style={frameStyle}>
           {isMobile ? (
             <main
               className={`panel glass-panel mobile-main-shell mobile-tab-${mobileTab} ${mobileTab === "chat" ? "mobile-chat-shell" : "mobile-panel-screen"}`}
@@ -1769,6 +2259,7 @@ export default function App() {
                         <textarea
                           className="textarea composer-input"
                           rows="1"
+                          aria-label="Ask a question about your study material"
                           placeholder="Ask for a summary, breakdown, challenge question, or study guide..."
                           value={chatInput}
                           onChange={(event) => {
@@ -1787,11 +2278,24 @@ export default function App() {
                           type="button"
                           onClick={() => void handleSendMessage()}
                           disabled={isSending}
+                          aria-label="Send question"
                         >
                           ➜
                         </button>
+                        {accessibility.voiceInput && voiceInputStatus.supported ? (
+                          <button
+                            className={`send-button voice-button ${isListening ? "listening" : ""}`}
+                            type="button"
+                            onClick={toggleVoiceInput}
+                            aria-pressed={isListening}
+                            aria-label={isListening ? "Stop voice input" : "Start voice input"}
+                          >
+                            {isListening ? "■" : "🎙"}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
+                    {speechError ? <div className="banner error-text">{speechError}</div> : null}
                   </div>
                 </>
               ) : null}
@@ -1887,6 +2391,7 @@ export default function App() {
                       <textarea
                         className="textarea composer-input"
                         rows="1"
+                        aria-label="Ask a question about your study material"
                         placeholder="Ask for a summary, breakdown, challenge question, or study guide..."
                         value={chatInput}
                         onChange={(event) => {
@@ -1905,11 +2410,24 @@ export default function App() {
                         type="button"
                         onClick={() => void handleSendMessage()}
                         disabled={isSending}
+                        aria-label="Send question"
                       >
                         ➜
                       </button>
+                      {accessibility.voiceInput && voiceInputStatus.supported ? (
+                        <button
+                          className={`send-button voice-button ${isListening ? "listening" : ""}`}
+                          type="button"
+                          onClick={toggleVoiceInput}
+                          aria-pressed={isListening}
+                          aria-label={isListening ? "Stop voice input" : "Start voice input"}
+                        >
+                          {isListening ? "■" : "🎙"}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
+                  {speechError ? <div className="banner error-text">{speechError}</div> : null}
                 </div>
               </main>
 
@@ -1947,8 +2465,8 @@ export default function App() {
           )}
         </div>
       ) : (
-        <div className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
-          <Calendar events={calendarEvents} topics={allTopics} />
+        <div id="primary-content" className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
+          <Calendar events={calendarEvents} topics={allTopics} accessibility={accessibility} />
         </div>
       )}
 
@@ -1959,6 +2477,7 @@ export default function App() {
               className={`mobile-tab ${mobileTab === "sources" ? "active" : ""}`}
               type="button"
               onClick={() => setMobileTab("sources")}
+              aria-pressed={mobileTab === "sources"}
             >
               <span className="mobile-tab-icon">☰</span>
               <span>Sources</span>
@@ -1967,6 +2486,7 @@ export default function App() {
               className={`mobile-tab ${mobileTab === "chat" ? "active" : ""}`}
               type="button"
               onClick={() => setMobileTab("chat")}
+              aria-pressed={mobileTab === "chat"}
             >
               <span className="mobile-tab-icon">✦</span>
               <span>Chat</span>
@@ -1975,6 +2495,7 @@ export default function App() {
               className={`mobile-tab ${mobileTab === "studio" ? "active" : ""}`}
               type="button"
               onClick={() => setMobileTab("studio")}
+              aria-pressed={mobileTab === "studio"}
             >
               <span className="mobile-tab-icon">◌</span>
               <span>Studio</span>
@@ -2027,6 +2548,9 @@ export default function App() {
           onTagDraftChange={(val) => setTagDraft(val)}
           onAddTag={() => void handleAddTag()}
           onDeleteTag={(tag) => void handleDeleteTag(tag)}
+          accessibility={accessibility}
+          onToggleAccessibility={handleToggleAccessibility}
+          voiceInputStatus={voiceInputStatus}
         />
       ) : null}
 

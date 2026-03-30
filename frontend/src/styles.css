@@ -84,6 +84,87 @@ body {
     linear-gradient(145deg, var(--bg), var(--bg-deep));
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 100;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+body.a11y-larger-text {
+  font-size: 18px;
+}
+
+body.a11y-high-contrast {
+  --bg: #ffffff;
+  --bg-deep: #f2f4f7;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-muted: #e6eefc;
+  --text: #111827;
+  --text-muted: #374151;
+  --text-soft: #4b5563;
+  --border: rgba(17, 24, 39, 0.45);
+  --accent-soft: rgba(37, 99, 235, 0.2);
+  --danger-soft: rgba(185, 28, 28, 0.18);
+  --shadow-soft: 0 8px 24px rgba(18, 24, 32, 0.08);
+}
+
+body.dark-mode.a11y-high-contrast {
+  --bg: #0b1220;
+  --bg-deep: #111827;
+  --panel: #0f172a;
+  --panel-strong: #111827;
+  --surface: #111827;
+  --surface-strong: #172033;
+  --surface-muted: #1e3a5f;
+  --text: #f9fafb;
+  --text-muted: #d1d5db;
+  --text-soft: #cbd5e1;
+  --border: rgba(255, 255, 255, 0.32);
+  --accent-soft: rgba(147, 197, 253, 0.22);
+  --danger-soft: rgba(248, 113, 113, 0.22);
+}
+
+body.a11y-high-contrast .glass-panel,
+body.a11y-high-contrast .chat-hero,
+body.a11y-high-contrast .message.bot,
+body.a11y-high-contrast .document-item,
+body.a11y-high-contrast .upload-job,
+body.a11y-high-contrast .note-card,
+body.a11y-high-contrast .studio-card,
+body.a11y-high-contrast .composer-shell,
+body.a11y-high-contrast .modal,
+body.a11y-high-contrast .tag-group,
+body.a11y-high-contrast .insight-group,
+body.a11y-high-contrast .mobile-tabbar {
+  border-width: 2px;
+  box-shadow: none;
+}
+
 .auth-shell {
   min-height: 100dvh;
   padding: 24px;
@@ -366,6 +447,66 @@ button {
   transform: translateY(-1px) scale(1.01);
   border-color: color-mix(in srgb, var(--accent) 56%, var(--border) 44%);
   box-shadow: 0 16px 32px rgba(109, 74, 255, 0.16);
+}
+
+.theme-toggle:focus-visible,
+.sidebar-toggle:focus-visible,
+.icon-button:focus-visible,
+.small-button:focus-visible,
+.send-button:focus-visible,
+.modal-button:focus-visible,
+.modal-close:focus-visible,
+.starter-card:focus-visible,
+.studio-card:focus-visible,
+.rail-badge:focus-visible,
+.upload-zone:focus-visible,
+.insight-label:focus-visible,
+.mobile-tab:focus-visible,
+.tag-chip button:focus-visible,
+.note-delete:focus-visible,
+.flashcard:focus-visible,
+.settings-toggle input:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 72%, white 28%);
+  outline-offset: 3px;
+}
+
+body.a11y-enhanced-focus .theme-toggle:focus-visible,
+body.a11y-enhanced-focus .sidebar-toggle:focus-visible,
+body.a11y-enhanced-focus .icon-button:focus-visible,
+body.a11y-enhanced-focus .small-button:focus-visible,
+body.a11y-enhanced-focus .send-button:focus-visible,
+body.a11y-enhanced-focus .modal-button:focus-visible,
+body.a11y-enhanced-focus .modal-close:focus-visible,
+body.a11y-enhanced-focus .starter-card:focus-visible,
+body.a11y-enhanced-focus .studio-card:focus-visible,
+body.a11y-enhanced-focus .rail-badge:focus-visible,
+body.a11y-enhanced-focus .upload-zone:focus-visible,
+body.a11y-enhanced-focus .insight-label:focus-visible,
+body.a11y-enhanced-focus .mobile-tab:focus-visible,
+body.a11y-enhanced-focus .tag-chip button:focus-visible,
+body.a11y-enhanced-focus .note-delete:focus-visible,
+body.a11y-enhanced-focus .flashcard:focus-visible,
+body.a11y-enhanced-focus .settings-toggle input:focus-visible {
+  outline-width: 4px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-soft) 78%, transparent 22%);
+}
+
+body.a11y-enhanced-focus .theme-toggle,
+body.a11y-enhanced-focus .sidebar-toggle,
+body.a11y-enhanced-focus .icon-button,
+body.a11y-enhanced-focus .small-button,
+body.a11y-enhanced-focus .send-button,
+body.a11y-enhanced-focus .modal-button,
+body.a11y-enhanced-focus .modal-close,
+body.a11y-enhanced-focus .starter-card,
+body.a11y-enhanced-focus .studio-card,
+body.a11y-enhanced-focus .rail-badge,
+body.a11y-enhanced-focus .upload-zone,
+body.a11y-enhanced-focus .mobile-tab,
+body.a11y-enhanced-focus .composer-shell,
+body.a11y-enhanced-focus .document-item,
+body.a11y-enhanced-focus .settings-toggle {
+  border-width: 2px;
 }
 
 .theme-toggle {
@@ -1259,6 +1400,16 @@ body.dark-mode .message.bot {
   margin-right: 4px;
 }
 
+.voice-button {
+  font-size: 1rem;
+}
+
+.voice-button.listening {
+  background: linear-gradient(135deg, var(--danger), var(--accent-hot));
+  color: white;
+  border-color: transparent;
+}
+
 .composer-meta {
   margin-top: 10px;
   justify-content: space-between;
@@ -1384,6 +1535,10 @@ body.dark-mode .message.bot {
 }
 
 .insight-label {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -1446,6 +1601,34 @@ body.dark-mode .message.bot {
   border-radius: 14px;
 }
 
+.settings-toggle-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.settings-toggle-title {
+  margin-bottom: 4px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.settings-toggle input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
 .flashcard {
   min-height: 300px;
   display: grid;
@@ -1457,6 +1640,8 @@ body.dark-mode .message.bot {
     radial-gradient(circle at top left, rgba(109, 74, 255, 0.18), transparent 38%),
     linear-gradient(145deg, var(--surface-strong), var(--surface));
   text-align: center;
+  color: var(--text);
+  cursor: pointer;
 }
 
 .flashcard-label {
@@ -1815,6 +2000,14 @@ body.dark-mode .message.bot {
   .selected-stack {
     margin-top: 6px;
   }
+}
+
+body.a11y-reduced-motion *,
+body.a11y-reduced-motion *::before,
+body.a11y-reduced-motion *::after {
+  animation: none !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 @media (max-width: 720px) {
