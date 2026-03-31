@@ -175,7 +175,9 @@ function dedupeSources(sources = []) {
 
   return sources.filter((source) => {
     const label = (source?.filename || source?.source || "Unknown source").trim();
-    const key = label.toLowerCase();
+    const kind = source?.source_type || "chunk";
+    const sourceId = source?.source_id || "";
+    const key = `${sourceId}|${kind}|${label.toLowerCase()}`;
     if (seen.has(key)) {
       return false;
     }
@@ -206,6 +208,11 @@ function formatTraceTiming(value) {
 
 function useDialog(open, onClose) {
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open || !dialogRef.current) {
@@ -221,7 +228,7 @@ function useDialog(open, onClose) {
     function handleKeyDown(event) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current?.();
         return;
       }
 
@@ -274,7 +281,7 @@ function useDialog(open, onClose) {
         previousActiveElement.focus();
       }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return dialogRef;
 }
@@ -354,6 +361,7 @@ function RetrievalTrace({ message }) {
   const queryCount = trace.generated_queries?.length || 0;
   const fusedResults = Array.isArray(trace.fused_results) ? trace.fused_results : [];
   const retrievalRuns = Array.isArray(trace.retrieval_runs) ? trace.retrieval_runs : [];
+  const fullDocumentFetches = Array.isArray(trace.full_document_fetches) ? trace.full_document_fetches : [];
   const summary = trace.summary || {};
   const timings = trace.timings_ms || {};
 
@@ -426,7 +434,31 @@ function RetrievalTrace({ message }) {
           </div>
         </div>
 
-        {fusedResults.length ? (
+        {fullDocumentFetches.length ? (
+          <div className="trace-section">
+            <div className="trace-section-title">Full document fallback</div>
+            <div className="trace-result-list">
+              {fullDocumentFetches.map((item) => (
+                <article key={item.source_id || item.filename} className="trace-result-card kept">
+                  <div className="trace-result-top">
+                    <div className="trace-result-file">
+                      {item.source_id ? `${item.source_id} • ` : ""}
+                      {item.filename}
+                    </div>
+                    <div className="trace-result-meta">
+                      <span>Full document</span>
+                      {item.tag ? <span>{item.tag}</span> : null}
+                      {item.source ? <span>{item.source}</span> : null}
+                    </div>
+                  </div>
+                  {item.reason ? <div className="trace-result-snippet">{item.reason}</div> : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {fusedResults.length || fullDocumentFetches.length ? (
           <div className="trace-section">
             <div className="trace-section-title">Evidence used in the final answer</div>
             <div className="trace-result-list">
@@ -446,6 +478,21 @@ function RetrievalTrace({ message }) {
                     </div>
                   </div>
                   {result.snippet ? <div className="trace-result-snippet">{result.snippet}</div> : null}
+                </article>
+              ))}
+              {fullDocumentFetches.map((item) => (
+                <article key={`full-${item.source_id || item.filename}`} className="trace-result-card kept">
+                  <div className="trace-result-top">
+                    <div className="trace-result-file">
+                      {item.source_id ? `${item.source_id} • ` : ""}
+                      {item.filename}
+                    </div>
+                    <div className="trace-result-meta">
+                      <span>Full document</span>
+                      {item.tag ? <span>{item.tag}</span> : null}
+                    </div>
+                  </div>
+                  {item.reason ? <div className="trace-result-snippet">{item.reason}</div> : null}
                 </article>
               ))}
             </div>
@@ -1970,8 +2017,7 @@ export default function App() {
                                 </div>
                                 <div className="document-line">
                                   <select
-                                    className="micro-pill"
-                                    style={{ border: 'none', appearance: 'none', cursor: 'pointer', outline: 'none', paddingRight: '20px', background: 'rgba(255, 255, 255, 0.2) url("data:image/svg+xml;utf8,<svg fill=%27black%27 height=%2724%27 viewBox=%270 0 24 24%27 width=%2724%27 xmlns=%27http://www.w3.org/2000/svg%27><path d=%27M7 10l5 5 5-5z%27/><path d=%27M0 0h24v24H0z%27 fill=%27none%27/></svg>") no-repeat right 4px center/14px 14px', color: 'inherit' }}
+                                    className="micro-pill document-tag-select"
                                     aria-label={`Topic for ${doc.filename}`}
                                     value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
                                     onChange={(e) => {

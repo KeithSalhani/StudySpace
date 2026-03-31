@@ -489,9 +489,9 @@ def on_shutdown() -> None:
 async def home(request: Request):
     """Serve the main chat interface"""
     return templates.TemplateResponse(
-        request,
         "index.html",
         {
+            "request": request,
             "frontend_built": FRONTEND_ENTRY_JS.exists(),
             "frontend_asset_version": get_frontend_asset_version(),
         },
