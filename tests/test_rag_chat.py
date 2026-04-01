@@ -42,6 +42,14 @@ def test_chat_success_returns_trace_and_sources(rag_chat, mock_vector_store, moc
                 }
             )
         ),
+        make_response(
+            json.dumps(
+                {
+                    "needs_full_documents": False,
+                    "full_document_filenames": []
+                }
+            )
+        ),
         make_response("AI Response [S1]"),
     ]
 
@@ -76,7 +84,7 @@ def test_chat_success_returns_trace_and_sources(rag_chat, mock_vector_store, moc
     assert len(payload["trace"]["retrieval_runs"]) == 3
     assert payload["trace"]["summary"]["passages_used"] == 2
     assert payload["sources"][0]["filename"] == "week1.pdf"
-    assert mock_client.models.generate_content.call_count == 2
+    assert mock_client.models.generate_content.call_count == 3
     assert mock_vector_store.search.call_count == 3
 
 
@@ -91,6 +99,14 @@ def test_chat_uses_module_tag_filter_when_plan_selects_one(rag_chat, mock_vector
                         {"text": "memory forensics artifacts", "goal": "artifacts", "module_tag": "Forensics"},
                         {"text": "memory forensics examples", "goal": "examples", "module_tag": "Forensics"},
                     ]
+                }
+            )
+        ),
+        make_response(
+            json.dumps(
+                {
+                    "needs_full_documents": False,
+                    "full_document_filenames": []
                 }
             )
         ),
@@ -122,6 +138,14 @@ def test_chat_with_selected_files_does_not_add_tag_filter(rag_chat, mock_vector_
                 }
             )
         ),
+        make_response(
+            json.dumps(
+                {
+                    "needs_full_documents": False,
+                    "full_document_filenames": []
+                }
+            )
+        ),
         make_response("Answer"),
     ]
     mock_vector_store.list_documents.return_value = [{"filename": "file1.pdf", "tag": "Security"}]
@@ -145,6 +169,14 @@ def test_chat_empty_response_raises(rag_chat, mock_vector_store, mock_genai):
                         {"text": "query two", "goal": "two", "module_tag": None},
                         {"text": "query three", "goal": "three", "module_tag": None},
                     ]
+                }
+            )
+        ),
+        make_response(
+            json.dumps(
+                {
+                    "needs_full_documents": False,
+                    "full_document_filenames": []
                 }
             )
         ),
