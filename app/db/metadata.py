@@ -124,7 +124,7 @@ class JSONDatabase:
             "summary": summary,
         }
 
-    def _mark_exam_folder_analysis_stale_unlocked(self, user: Dict[str, Any], folder_ids: List[Optional[str]]) -> None:
+    def _mark_exam_folder_analysis_stale_unlocked(self, user: Dict[str, Any], folder_ids: List[Optional[str]]) -> bool:
         analyses = user.setdefault("exam_folder_analyses", {})
         changed = False
         for folder_id in folder_ids:
@@ -136,8 +136,7 @@ class JSONDatabase:
             analysis["stale"] = True
             analysis["updated_at"] = self._now_iso()
             changed = True
-        if changed:
-            self.save()
+        return changed
 
     def get_user_credentials(self, username: str) -> Optional[Dict[str, str]]:
         with self._lock:

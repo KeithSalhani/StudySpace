@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from google import genai
 from google.genai import types
@@ -76,7 +76,11 @@ class TopicMiner:
 
         try:
             synthesis_payload = self._synthesize_folder_topics(folder_name, analyzable_papers)
-            themes = self._normalize_themes(synthesis_payload.get("themes"), len(analyzable_papers))
+            themes = self._normalize_themes(
+                synthesis_payload.get("themes"),
+                len(analyzable_papers),
+                fallback_papers=analyzable_papers,
+            )
             observations = self._normalize_string_list(synthesis_payload.get("observations"))
         except Exception as exc:
             logger.warning("Falling back to heuristic topic synthesis for %s: %s", folder_name, exc)
@@ -120,23 +124,26 @@ class TopicMiner:
             raise ValueError("Extracted paper content is empty")
         return normalized[: self.MAX_PAPER_TEXT_CHARS]
 
-    def _build_pdf_contents(self, file_path: Path, prompt: str) -> List[Any]:
+    def _build_pdf_contents(self, file_path: Path, prompt: str) -> Tuple[List[Any], Optional[str]]:
         if file_path.stat().st_size <= self.INLINE_PDF_LIMIT_BYTES:
-            return [
-                prompt,
-                types.Part.from_bytes(
-                    data=file_path.read_bytes(),
-                    mime_type="application/pdf",
-                ),
-            ]
+            return (
+                [
+                    prompt,
+                    types.Part.from_bytes(
+                        data=file_path.read_bytes(),
+                        mime_type="application/pdf",
+                    ),
+                ],
+                None,
+            )
 
         uploaded_file = self.client.files.upload(
             file=file_path,
             config={"mime_type": "application/pdf"},
         )
-        return [prompt, uploaded_file]
+        return [prompt, uploaded_file], getattr(uploaded_file, "name", None)
 
-    def _build_paper_contents(self, document: Dict[str, Any], prompt: str) -> List[Any]:
+    def _build_paper_contents(self, document: Dict[str, Any], prompt: str) -> Tuple[List[Any], Optional[str]]:
         file_path = Path(str(document.get("path") or ""))
         if not file_path.exists():
             raise FileNotFoundError(f"Exam paper file not found: {file_path}")
@@ -146,13 +153,16 @@ class TopicMiner:
             return self._build_pdf_contents(file_path, prompt)
 
         content = self._load_document_content(document)
-        return [
-            f"""{prompt}
+        return (
+            [
+                f"""{prompt}
 
 Plain text fallback for a non-PDF exam document:
 {content}
 """
-        ]
+            ],
+            None,
+        )
 
     def _extract_paper_topics(
         self,
@@ -193,7 +203,8 @@ Rules:
 Filename: {document.get("filename") or "Unknown"}
 """
 
-        response_payload = self._generate_json(self._build_paper_contents(document, prompt))
+        contents, uploaded_file_name = self._build_paper_contents(document, prompt)
+        response_payload = self._generate_json(contents, uploaded_file_name=uploaded_file_name)
         return self._normalize_paper_payload(document, response_payload)
 
     def _synthesize_folder_topics(
@@ -248,20 +259,27 @@ Paper records:
 
         return self._generate_json(prompt)
 
-    def _generate_json(self, contents: Any) -> Dict[str, Any]:
-        response = self.client.models.generate_content(
-            model=self.model_id,
-            contents=contents,
-            config={"response_mime_type": "application/json"},
-        )
+    def _generate_json(self, contents: Any, uploaded_file_name: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=contents,
+                config={"response_mime_type": "application/json"},
+            )
 
-        if not getattr(response, "text", None):
-            raise ValueError("Empty response from Gemini")
+            if not getattr(response, "text", None):
+                raise ValueError("Empty response from Gemini")
 
-        parsed = self._parse_json_text(response.text)
-        if not isinstance(parsed, dict):
-            raise ValueError("Gemini did not return a JSON object")
-        return parsed
+            parsed = self._parse_json_text(response.text)
+            if not isinstance(parsed, dict):
+                raise ValueError("Gemini did not return a JSON object")
+            return parsed
+        finally:
+            if uploaded_file_name and hasattr(self.client, "files") and hasattr(self.client.files, "delete"):
+                try:
+                    self.client.files.delete(name=uploaded_file_name)
+                except Exception as exc:
+                    logger.warning("Failed to delete uploaded Gemini file %s: %s", uploaded_file_name, exc)
 
     @staticmethod
     def _parse_json_text(payload: str) -> Any:
@@ -315,9 +333,14 @@ Paper records:
             "questions": questions,
         }
 
-    def _normalize_themes(self, items: Any, total_papers: int) -> List[Dict[str, Any]]:
+    def _normalize_themes(
+        self,
+        items: Any,
+        total_papers: int,
+        fallback_papers: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
         if not isinstance(items, list):
-            return self._fallback_themes([])
+            return self._fallback_themes(fallback_papers or [])
 
         themes: List[Dict[str, Any]] = []
         for item in items:

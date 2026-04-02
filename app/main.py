@@ -585,7 +585,6 @@ class TopicMiningJobManager:
             stage=job.stage,
             progress=job.progress,
             error=None,
-            stale=False,
         )
 
         documents = [
@@ -629,7 +628,6 @@ class TopicMiningJobManager:
                 progress=completed_job.progress,
                 completed_at=completed_job.completed_at,
                 error=None,
-                stale=False,
                 model=result.get("model") or self.miner.model_id,
                 pipeline_version=result.get("pipeline_version") or self.miner.pipeline_version,
                 summary=result.get("summary") or {},
@@ -650,7 +648,6 @@ class TopicMiningJobManager:
             stage=job.stage,
             progress=job.progress,
             error=None,
-            stale=False,
         )
 
     def _fail_job(self, job_id: str, error_message: str) -> None:

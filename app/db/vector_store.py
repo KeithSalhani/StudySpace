@@ -453,13 +453,24 @@ class VectorStore:
                     return False
 
                 for doc_id, metadata, num_chunks in doc_ids_to_update:
-                    metadata["folder_id"] = folder_id
-                    metadata["folder_name"] = folder_name
+                    if folder_id is not None:
+                        metadata["folder_id"] = folder_id
+                    else:
+                        metadata.pop("folder_id", None)
+
+                    if folder_name is not None:
+                        metadata["folder_name"] = folder_name
+                    else:
+                        metadata.pop("folder_name", None)
+
+                    sanitized_metadata = self._sanitize_metadata(metadata)
+                    metadata.clear()
+                    metadata.update(sanitized_metadata)
 
                     ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
                     metadatas = []
                     for i in range(num_chunks):
-                        chunk_meta = self._sanitize_metadata(metadata)
+                        chunk_meta = dict(metadata)
                         chunk_meta.update({
                             "doc_id": doc_id,
                             "chunk_index": i,

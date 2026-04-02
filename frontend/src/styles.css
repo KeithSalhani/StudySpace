@@ -2431,13 +2431,7 @@ body.dark-mode .message.bot {
   }
 
   .topic-miner-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .topic-miner-layout.preview-closed,
-  .topic-miner-layout.papers-closed.preview-open,
-  .topic-miner-layout.folders-closed.preview-open {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
 
   .topic-miner-sidebar.open,
