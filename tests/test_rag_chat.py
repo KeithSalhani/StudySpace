@@ -42,6 +42,16 @@ def test_chat_success_returns_trace_and_sources(rag_chat, mock_vector_store, moc
                 }
             )
         ),
+        make_response(
+            json.dumps(
+                {
+                    "answer": "",
+                    "needs_full_documents": False,
+                    "full_document_filenames": [],
+                    "missing_information": "",
+                }
+            )
+        ),
         make_response("AI Response [S1]"),
     ]
 
@@ -76,7 +86,7 @@ def test_chat_success_returns_trace_and_sources(rag_chat, mock_vector_store, moc
     assert len(payload["trace"]["retrieval_runs"]) == 3
     assert payload["trace"]["summary"]["passages_used"] == 2
     assert payload["sources"][0]["filename"] == "week1.pdf"
-    assert mock_client.models.generate_content.call_count == 2
+    assert mock_client.models.generate_content.call_count == 3
     assert mock_vector_store.search.call_count == 3
 
 
@@ -91,6 +101,16 @@ def test_chat_uses_module_tag_filter_when_plan_selects_one(rag_chat, mock_vector
                         {"text": "memory forensics artifacts", "goal": "artifacts", "module_tag": "Forensics"},
                         {"text": "memory forensics examples", "goal": "examples", "module_tag": "Forensics"},
                     ]
+                }
+            )
+        ),
+        make_response(
+            json.dumps(
+                {
+                    "answer": "",
+                    "needs_full_documents": False,
+                    "full_document_filenames": [],
+                    "missing_information": "",
                 }
             )
         ),
@@ -122,6 +142,16 @@ def test_chat_with_selected_files_does_not_add_tag_filter(rag_chat, mock_vector_
                 }
             )
         ),
+        make_response(
+            json.dumps(
+                {
+                    "answer": "",
+                    "needs_full_documents": False,
+                    "full_document_filenames": [],
+                    "missing_information": "",
+                }
+            )
+        ),
         make_response("Answer"),
     ]
     mock_vector_store.list_documents.return_value = [{"filename": "file1.pdf", "tag": "Security"}]
@@ -145,6 +175,16 @@ def test_chat_empty_response_raises(rag_chat, mock_vector_store, mock_genai):
                         {"text": "query two", "goal": "two", "module_tag": None},
                         {"text": "query three", "goal": "three", "module_tag": None},
                     ]
+                }
+            )
+        ),
+        make_response(
+            json.dumps(
+                {
+                    "answer": "",
+                    "needs_full_documents": False,
+                    "full_document_filenames": [],
+                    "missing_information": "",
                 }
             )
         ),
@@ -181,3 +221,125 @@ def test_create_prompt_no_context(rag_chat):
 
     assert "Question?" in prompt
     assert "No relevant evidence was retrieved" in prompt
+
+
+def test_normalize_query_plan_deduplicates_and_backfills_from_fallback(rag_chat):
+    normalized = rag_chat._normalize_query_plan(
+        [
+            {"text": "  Security basics  ", "goal": "overview", "module_tag": "Security"},
+            {"text": "security basics", "goal": "duplicate", "module_tag": "Security"},
+        ],
+        ["Security"],
+        "Explain security basics",
+    )
+
+    assert len(normalized) == 3
+    assert normalized[0]["text"] == "Security basics"
+    assert normalized[0]["module_tag"] == "Security"
+    assert normalized[1]["text"] != normalized[0]["text"]
+
+
+def test_normalize_answer_plan_filters_unknown_and_duplicate_filenames(rag_chat):
+    payload = rag_chat._normalize_answer_plan(
+        {
+            "answer": "Draft answer",
+            "needs_full_documents": True,
+            "full_document_filenames": ["week1.pdf", "WEEK1.PDF", "missing.pdf", "week2.pdf"],
+            "missing_information": "Need exact examples",
+        },
+        ["week1.pdf", "week2.pdf"],
+    )
+
+    assert payload == {
+        "answer": "Draft answer",
+        "needs_full_documents": True,
+        "full_document_filenames": ["week1.pdf", "week2.pdf"],
+        "missing_information": "Need exact examples",
+    }
+
+
+def test_generate_response_with_document_fallback_returns_direct_answer_without_model_call(
+    rag_chat, mock_vector_store
+):
+    rag_chat._assess_retrieved_evidence = MagicMock(
+        return_value={
+            "answer": "Use the retrieved chunks.",
+            "needs_full_documents": False,
+            "full_document_filenames": [],
+            "missing_information": "",
+        }
+    )
+
+    payload = rag_chat._generate_response_with_document_fallback(
+        message="Question",
+        owner_username="alice",
+        fused_results=[],
+    )
+
+    assert payload == {
+        "response": "Use the retrieved chunks.",
+        "full_document_sources": [],
+        "full_document_fetches": [],
+    }
+    mock_vector_store.get_full_document_content.assert_not_called()
+
+
+def test_generate_response_with_document_fallback_uses_full_documents(rag_chat, mock_vector_store, mock_genai):
+    rag_chat._assess_retrieved_evidence = MagicMock(
+        return_value={
+            "answer": "",
+            "needs_full_documents": True,
+            "full_document_filenames": ["week1.pdf"],
+            "missing_information": "Need the full explanation",
+        }
+    )
+    mock_vector_store.get_full_document_content.return_value = {
+        "filename": "week1.pdf",
+        "tag": "Security",
+        "content": "Full document content",
+        "source": "processed_markdown",
+    }
+    mock_genai.Client.return_value.models.generate_content.return_value = make_response("Expanded answer [F1]")
+
+    payload = rag_chat._generate_response_with_document_fallback(
+        message="Question",
+        owner_username="alice",
+        fused_results=[
+            {
+                "source_id": "S1",
+                "filename": "week1.pdf",
+                "chunk_index": 0,
+                "tag": "Security",
+                "content": "Chunk content",
+            }
+        ],
+    )
+
+    assert payload["response"] == "Expanded answer [F1]"
+    assert payload["full_document_sources"] == [
+        {
+            "source_id": "F1",
+            "doc_id": None,
+            "filename": "week1.pdf",
+            "chunk_index": None,
+            "distance": None,
+            "tag": "Security",
+            "source_type": "full_document",
+        }
+    ]
+    assert payload["full_document_fetches"] == [
+        {
+            "source_id": "F1",
+            "filename": "week1.pdf",
+            "tag": "Security",
+            "source": "processed_markdown",
+            "reason": "Need the full explanation",
+        }
+    ]
+
+
+def test_make_snippet_truncates_long_text(rag_chat):
+    snippet = rag_chat._make_snippet("word " * 100, limit=25)
+
+    assert len(snippet) <= 25
+    assert snippet.endswith("…")

@@ -1,17 +1,14 @@
 """
 RAG Chat Application for Student Study Hub
 """
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from queue import Empty, Queue
 from pathlib import Path
+from queue import Empty, Queue
+from typing import Any, Dict, List, Optional
+
 import asyncio
 import logging
 import os
@@ -19,6 +16,12 @@ import shutil
 import threading
 import time
 import uuid
+
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from app.auth import (
     AuthenticatedUser,
@@ -52,17 +55,9 @@ logger = logging.getLogger(__name__)
 # Check for API key
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable must be set. Please check config.py")
-
-app = FastAPI(title="Student Study Hub RAG Chat")
 FRONTEND_DIST_DIR = STATIC_DIR / "dist"
 FRONTEND_ENTRY_JS = FRONTEND_DIST_DIR / "assets" / "index.js"
 FRONTEND_ENTRY_CSS = FRONTEND_DIST_DIR / "assets" / "index.css"
-
-# Mount static files
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-# Templates
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # Initialize components
 doc_processor = DocumentProcessor()
@@ -72,7 +67,6 @@ quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 metadata_extractor = MetadataExtractor(GEMINI_API_KEY)
 db = JSONDatabase()
-app.state.db = db
 
 
 def _user_root(username: str) -> Path:
@@ -409,6 +403,25 @@ class UploadJobManager:
 upload_jobs = UploadJobManager(doc_processor, db, vector_store, metadata_extractor)
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    upload_jobs.start()
+    try:
+        yield
+    finally:
+        upload_jobs.stop()
+
+
+app = FastAPI(title="Student Study Hub RAG Chat", lifespan=lifespan)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Templates
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+app.state.db = db
+
+
 class ChatRequest(BaseModel):
     message: str
     selected_files: Optional[List[str]] = None
@@ -475,23 +488,13 @@ def _ensure_selected_files_owned(
     return owned_files
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    upload_jobs.start()
-
-
-@app.on_event("shutdown")
-def on_shutdown() -> None:
-    upload_jobs.stop()
-
-
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Serve the main chat interface"""
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "frontend_built": FRONTEND_ENTRY_JS.exists(),
             "frontend_asset_version": get_frontend_asset_version(),
         },

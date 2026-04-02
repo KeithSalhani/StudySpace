@@ -88,6 +88,22 @@ def test_search_with_tag_filter(vector_store):
         where={"$and": [{"owner_username": "alice"}, {"tag": "Security"}]}
     )
 
+
+def test_build_where_filter_supports_multiple_files_and_tags(vector_store):
+    where = vector_store._build_where_filter(
+        owner_username="alice",
+        selected_files=["week1.pdf", "week2.pdf"],
+        selected_tags=["Security", "  Uncategorized  ", "Forensics"],
+    )
+
+    assert where == {
+        "$and": [
+            {"owner_username": "alice"},
+            {"filename": {"$in": ["week1.pdf", "week2.pdf"]}},
+            {"tag": {"$in": ["Security", "Forensics"]}},
+        ]
+    }
+
 def test_delete_document(vector_store):
     # Setup
     # Populate internal state manually as it matches filename
@@ -138,3 +154,106 @@ def test_get_document_paths_filters_by_filename_and_deduplicates(vector_store):
     paths = vector_store.get_document_paths("alice", "alpha.pdf")
 
     assert paths == ["/tmp/a1.pdf", "/tmp/a2.pdf"]
+
+
+def test_get_relevant_context_combines_documents_and_sources(vector_store):
+    vector_store.search = MagicMock(
+        return_value=[
+            {
+                "document": "Chunk one",
+                "metadata": {"doc_id": "doc1", "filename": "week1.pdf", "chunk_index": 0},
+                "distance": 0.1,
+            },
+            {
+                "document": "Chunk two",
+                "metadata": {"doc_id": "doc2", "filename": "week2.pdf", "chunk_index": 1},
+                "distance": 0.2,
+            },
+        ]
+    )
+
+    context, sources = vector_store.get_relevant_context("query", owner_username="alice", selected_files=["week1.pdf"])
+
+    assert context == "Chunk one\n\nChunk two"
+    assert sources == [
+        {"doc_id": "doc1", "filename": "week1.pdf", "chunk_index": 0, "distance": 0.1},
+        {"doc_id": "doc2", "filename": "week2.pdf", "chunk_index": 1, "distance": 0.2},
+    ]
+
+
+def test_get_document_metadata_returns_copy(vector_store):
+    vector_store.documents = {
+        "doc1": {"metadata": {"filename": "alpha.pdf", "owner_username": "alice", "tag": "Security"}}
+    }
+
+    metadata = vector_store.get_document_metadata("alice", "alpha.pdf")
+    metadata["tag"] = "Changed"
+
+    assert vector_store.documents["doc1"]["metadata"]["tag"] == "Security"
+
+
+def test_get_full_document_content_prefers_processed_markdown(vector_store, tmp_path):
+    processed_path = tmp_path / "alpha.md"
+    processed_path.write_text("Full markdown", encoding="utf-8")
+    vector_store.documents = {
+        "doc1": {
+            "metadata": {
+                "filename": "alpha.pdf",
+                "owner_username": "alice",
+                "processed_path": str(processed_path),
+                "tag": "Security",
+            }
+        }
+    }
+
+    payload = vector_store.get_full_document_content("alice", "alpha.pdf")
+
+    assert payload == {
+        "filename": "alpha.pdf",
+        "tag": "Security",
+        "content": "Full markdown",
+        "source": "processed_markdown",
+    }
+
+
+def test_get_full_document_content_reconstructs_from_chunks(vector_store):
+    vector_store.documents = {
+        "doc1": {
+            "metadata": {"filename": "alpha.pdf", "owner_username": "alice", "tag": "Security"},
+            "chunks": 2,
+        }
+    }
+    vector_store.collection.get.return_value = {
+        "documents": ["Second", "First"],
+        "metadatas": [{"chunk_index": 1}, {"chunk_index": 0}],
+    }
+
+    payload = vector_store.get_full_document_content("alice", "alpha.pdf")
+
+    assert payload == {
+        "filename": "alpha.pdf",
+        "tag": "Security",
+        "content": "First\n\nSecond",
+        "source": "reconstructed_chunks",
+    }
+
+
+def test_update_document_tag_updates_memory_and_collection(vector_store):
+    vector_store.documents = {
+        "doc1": {
+            "metadata": {"filename": "alpha.pdf", "owner_username": "alice", "tag": "OldTag"},
+            "chunks": 2,
+        }
+    }
+
+    result = vector_store.update_document_tag("alice", "alpha.pdf", "NewTag")
+
+    assert result is True
+    assert vector_store.documents["doc1"]["metadata"]["tag"] == "NewTag"
+    vector_store.collection.update.assert_called_once_with(
+        ids=["doc1_chunk_0", "doc1_chunk_1"],
+        metadatas=[
+            {"filename": "alpha.pdf", "owner_username": "alice", "tag": "NewTag", "doc_id": "doc1", "chunk_index": 0, "total_chunks": 2},
+            {"filename": "alpha.pdf", "owner_username": "alice", "tag": "NewTag", "doc_id": "doc1", "chunk_index": 1, "total_chunks": 2},
+        ],
+    )
