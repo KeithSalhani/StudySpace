@@ -1,8 +1,10 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 
 from app.db.metadata import JSONDatabase
+from app.db.mongo import MongoDatabase
 
 
 @pytest.fixture
@@ -194,6 +196,23 @@ def test_delete_document_metadata(db):
     assert db.delete_document_metadata("alice", "doc1.pdf") is True
     assert "doc1.pdf" not in db.get_all_metadata("alice")
     assert db.delete_document_metadata("alice", "nonexistent.pdf") is False
+
+
+def test_get_single_document_metadata(db):
+    db.create_user("alice", "hash", "salt")
+    meta = {"assessments": [], "tag": "Security"}
+
+    db.set_document_metadata("alice", "doc1.pdf", meta)
+
+    assert db.get_document_metadata("alice", "doc1.pdf") == meta
+    assert db.get_document_metadata("alice", "missing.pdf") is None
+
+
+def test_mongo_iso_treats_naive_datetime_as_utc():
+    naive_utc = datetime(2026, 3, 27, 14, 23, 41)
+
+    assert MongoDatabase._iso(naive_utc) == "2026-03-27T14:23:41+00:00"
+    assert MongoDatabase._iso(datetime(2026, 3, 27, 14, 23, 41, tzinfo=timezone.utc)) == "2026-03-27T14:23:41+00:00"
 
 
 def test_migrate_initializes_documents_field(db_file):

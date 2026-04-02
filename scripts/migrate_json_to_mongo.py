@@ -61,21 +61,36 @@ def migrate(json_path: Path, mongo_uri: str, db_name: str, dry_run: bool) -> Non
         if not isinstance(raw_user, dict):
             continue
 
-        user_id = raw_user.get("id")
-        if not isinstance(user_id, str) or not user_id:
+        legacy_user_id = raw_user.get("id")
+        if not isinstance(legacy_user_id, str) or not legacy_user_id:
             continue
 
-        user_doc = {
-            "id": user_id,
-            "username": username,
-            "password_hash": raw_user.get("password_hash", ""),
-            "password_salt": raw_user.get("password_salt", ""),
-            "created_at": _maybe_datetime(raw_user.get("created_at")),
-        }
         user_count += 1
 
-        if not dry_run:
-            database.users.replace_one({"username": username}, user_doc, upsert=True)
+        user_id = legacy_user_id
+        if dry_run:
+            existing_user = None
+        else:
+            existing_user = database.users.find_one({"username": username}, {"_id": 0, "id": 1})
+            existing_user_id = existing_user.get("id") if isinstance(existing_user, dict) else None
+            if isinstance(existing_user_id, str) and existing_user_id:
+                user_id = existing_user_id
+
+            database.users.update_one(
+                {"username": username},
+                {
+                    "$set": {
+                        "username": username,
+                        "password_hash": raw_user.get("password_hash", ""),
+                        "password_salt": raw_user.get("password_salt", ""),
+                    },
+                    "$setOnInsert": {
+                        "id": user_id,
+                        "created_at": _maybe_datetime(raw_user.get("created_at")),
+                    },
+                },
+                upsert=True,
+            )
 
         for session in raw_user.get("sessions", []):
             if not isinstance(session, dict) or not session.get("id"):

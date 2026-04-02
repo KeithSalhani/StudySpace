@@ -20,14 +20,14 @@ Study Space is a FastAPI + React study workspace for user-scoped document chat, 
 ## Architecture
 
 - Frontend: React + Vite, built into backend-served static assets
-- Backend: FastAPI in [app/main.py](/home/horsehead/Projects/StudySpace_Interim/app/main.py)
-- Structured app data: MongoDB through [app/db/mongo.py](/home/horsehead/Projects/StudySpace_Interim/app/db/mongo.py)
-- Repository contract: [app/db/repository.py](/home/horsehead/Projects/StudySpace_Interim/app/db/repository.py)
-- Vector store: ChromaDB in [app/db/vector_store.py](/home/horsehead/Projects/StudySpace_Interim/app/db/vector_store.py)
+- Backend: FastAPI in [`app/main.py`](app/main.py)
+- Structured app data: MongoDB through [`app/db/mongo.py`](app/db/mongo.py)
+- Repository contract: [`app/db/repository.py`](app/db/repository.py)
+- Vector store: ChromaDB in [`app/db/vector_store.py`](app/db/vector_store.py)
 - Embeddings: `all-MiniLM-L6-v2`
 - LLM features: Google Gemini via `google-genai`
-- Ingestion and metadata extraction: [app/core/ingestion.py](/home/horsehead/Projects/StudySpace_Interim/app/core/ingestion.py), [app/core/metadata_extractor.py](/home/horsehead/Projects/StudySpace_Interim/app/core/metadata_extractor.py)
-- Exam topic mining: [app/core/topic_miner.py](/home/horsehead/Projects/StudySpace_Interim/app/core/topic_miner.py)
+- Ingestion and metadata extraction: [`app/core/ingestion.py`](app/core/ingestion.py), [`app/core/metadata_extractor.py`](app/core/metadata_extractor.py)
+- Exam topic mining: [`app/core/topic_miner.py`](app/core/topic_miner.py)
 
 ## Data Model
 
@@ -47,9 +47,9 @@ ChromaDB stores chunked document embeddings and retrieval metadata.
 ## Authentication And Isolation
 
 - Users sign up and sign in with username + password.
-- Passwords are stored as PBKDF2 hashes with per-user salts in [app/auth.py](/home/horsehead/Projects/StudySpace_Interim/app/auth.py).
+- Passwords are stored as PBKDF2 hashes with per-user salts in [`app/auth.py`](app/auth.py).
 - Successful auth issues an `HttpOnly` cookie named `studyspace_session`.
-- Session settings come from [app/config.py](/home/horsehead/Projects/StudySpace_Interim/app/config.py) via `SESSION_TTL_DAYS` and `SESSION_COOKIE_SECURE`.
+- Session settings come from [`app/config.py`](app/config.py) via `SESSION_TTL_DAYS` and `SESSION_COOKIE_SECURE`.
 
 User data is isolated as follows:
 
@@ -142,7 +142,7 @@ python scripts/migrate_json_to_mongo.py \
   --dry-run
 ```
 
-The importer is idempotent at the record level and upserts users, sessions, tags, notes, folders, document metadata, exam analyses, and exam documents.
+The importer upserts users, sessions, tags, notes, folders, document metadata, exam analyses, and exam documents. When rerun for the same usernames, it preserves any existing Mongo user ID for that username and reuses it for related imported records.
 
 ## Topic Miner
 
@@ -159,7 +159,7 @@ Current flow:
 
 ## Chat Flow
 
-The chat pipeline in [app/core/rag.py](/home/horsehead/Projects/StudySpace_Interim/app/core/rag.py) is a retrieval-planned RAG flow rather than a single search:
+The chat pipeline in [`app/core/rag.py`](app/core/rag.py) is a retrieval-planned RAG flow rather than a single search:
 
 1. The user sends a message to `POST /chat`.
 2. The backend builds a compact catalog from the user’s visible documents.

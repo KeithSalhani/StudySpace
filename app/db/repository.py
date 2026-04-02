@@ -73,6 +73,9 @@ class DatabaseRepository(Protocol):
     def set_document_metadata(self, username: str, filename: str, metadata: Dict[str, Any]) -> None:
         ...
 
+    def get_document_metadata(self, username: str, filename: str) -> Optional[Dict[str, Any]]:
+        ...
+
     def set_document_folder(self, username: str, filename: str, folder_id: Optional[str]) -> Dict[str, Any]:
         ...
 

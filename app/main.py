@@ -1142,7 +1142,7 @@ async def update_document_tag(filename: str, request: DocumentTagRequest, curren
         if normalized_tag:
             _database().add_tag(current_user.username, normalized_tag)
 
-        current_metadata = dict(_database().get_all_metadata(current_user.username).get(filename, {}))
+        current_metadata = dict(_database().get_document_metadata(current_user.username, filename) or {})
         previous_tag = current_metadata.get("tag")
         _database().set_document_metadata(current_user.username, filename, {"tag": normalized_tag})
 
@@ -1172,7 +1172,7 @@ async def update_document_folder(
         if normalized_folder_id:
             folder = _get_owned_folder(current_user.username, normalized_folder_id)
 
-        previous_metadata = dict(_database().get_all_metadata(current_user.username).get(filename, {}))
+        previous_metadata = dict(_database().get_document_metadata(current_user.username, filename) or {})
         _database().set_document_folder(current_user.username, filename, folder["id"] if folder else None)
         success = vector_store.update_document_folder(
             current_user.username,

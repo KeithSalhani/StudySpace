@@ -34,7 +34,11 @@ class MongoDatabase:
         if isinstance(value, str):
             return value
         if isinstance(value, datetime):
-            return value.astimezone(timezone.utc).isoformat()
+            if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+                value = value.replace(tzinfo=timezone.utc)
+            else:
+                value = value.astimezone(timezone.utc)
+            return value.isoformat()
         return str(value)
 
     @staticmethod
@@ -409,6 +413,16 @@ class MongoDatabase:
             },
             upsert=True,
         )
+
+    def get_document_metadata(self, username: str, filename: str) -> Optional[Dict[str, Any]]:
+        user = self._get_user_record(username)
+        if not user:
+            return None
+        existing = self.documents.find_one({"user_id": user["id"], "filename": filename}, {"_id": 0, "metadata": 1})
+        if not existing:
+            return None
+        metadata = existing.get("metadata")
+        return dict(metadata) if isinstance(metadata, dict) else {}
 
     def set_document_folder(self, username: str, filename: str, folder_id: Optional[str]) -> Dict[str, Any]:
         user = self._require_user_record(username)
