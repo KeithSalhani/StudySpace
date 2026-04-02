@@ -207,6 +207,36 @@ function formatTraceTiming(value) {
   return `${Math.round(value)}ms`;
 }
 
+function formatSearchModeLabel(mode) {
+  switch (mode) {
+    case "unfocused":
+      return "Broad search";
+    case "focused":
+      return "Focused search";
+    case "full_document":
+      return "Direct document read";
+    case "fallback_full_document":
+      return "Fallback document read";
+    default:
+      return "Search";
+  }
+}
+
+function getSearchModeClass(mode) {
+  switch (mode) {
+    case "unfocused":
+      return "mode-unfocused";
+    case "focused":
+      return "mode-focused";
+    case "full_document":
+      return "mode-full-document";
+    case "fallback_full_document":
+      return "mode-fallback-document";
+    default:
+      return "mode-unfocused";
+  }
+}
+
 function useDialog(open, onClose) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -333,9 +363,9 @@ function RetrievalTrace({ message }) {
 
   if (message.status === "running") {
     const pendingSteps = [
-      "Generating 3 search angles",
-      "Retrieving across your study material",
-      "Fusing evidence into one answer"
+      "Choosing search modes",
+      "Searching your study material",
+      "Building one grounded answer"
     ];
 
     return (
@@ -359,21 +389,81 @@ function RetrievalTrace({ message }) {
     return null;
   }
 
-  const queryCount = trace.generated_queries?.length || 0;
+  const generatedQueries = Array.isArray(trace.generated_queries) ? trace.generated_queries : [];
+  const queryCount = generatedQueries.length;
   const fusedResults = Array.isArray(trace.fused_results) ? trace.fused_results : [];
   const retrievalRuns = Array.isArray(trace.retrieval_runs) ? trace.retrieval_runs : [];
   const fullDocumentFetches = Array.isArray(trace.full_document_fetches) ? trace.full_document_fetches : [];
+  const searchModesUsed = Array.from(
+    new Set(generatedQueries.map((query) => query?.search_mode).filter(Boolean))
+  );
   const summary = trace.summary || {};
   const timings = trace.timings_ms || {};
+  const fullDocumentFetchesByQuery = fullDocumentFetches.reduce((accumulator, item) => {
+    const queryId = item?.query_id;
+    if (!queryId) {
+      return accumulator;
+    }
+    accumulator[queryId] = [...(accumulator[queryId] || []), item];
+    return accumulator;
+  }, {});
+
+  function renderModePill(mode, compact = false, keyValue = null) {
+    return (
+      <span
+        key={keyValue || undefined}
+        className={`trace-mode-pill ${getSearchModeClass(mode)} ${compact ? "compact" : ""}`.trim()}
+      >
+        {formatSearchModeLabel(mode)}
+      </span>
+    );
+  }
+
+  function renderTargetFiles(files) {
+    if (!Array.isArray(files) || !files.length) {
+      return null;
+    }
+
+    return (
+      <div className="trace-target-list">
+        {files.map((filename) => (
+          <span key={filename} className="trace-target-pill">
+            {filename}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  function renderFullDocumentFetchCard(item, keyPrefix = "") {
+    return (
+      <article key={`${keyPrefix}${item.source_id || item.filename}`} className="trace-result-card kept">
+        <div className="trace-result-top">
+          <div className="trace-result-file">
+            {item.source_id ? `${item.source_id} • ` : ""}
+            {item.filename}
+          </div>
+          <div className="trace-result-meta">
+            {renderModePill(item.search_mode, true)}
+            {item.query_id ? <span>{item.query_id.toUpperCase()}</span> : null}
+            {item.tag ? <span>{item.tag}</span> : null}
+            {item.source ? <span>{item.source}</span> : null}
+          </div>
+        </div>
+        {item.reason ? <div className="trace-result-snippet">{item.reason}</div> : null}
+      </article>
+    );
+  }
 
   return (
     <div className="retrieval-trace">
       <div className="trace-head">
         <div className="source-list-label">Search breakdown</div>
         <div className="trace-pill-row">
-          <span className="chat-status-pill">{queryCount} queries</span>
+          <span className="chat-status-pill">{queryCount} step{queryCount === 1 ? "" : "s"}</span>
           <span className="chat-status-pill">{summary.passages_used || fusedResults.length} passages</span>
           <span className="chat-status-pill">{summary.documents_considered || 0} docs</span>
+          {searchModesUsed.map((mode) => renderModePill(mode, true, mode))}
           {formatTraceTiming(timings.total) ? (
             <span className="chat-status-pill">{formatTraceTiming(timings.total)}</span>
           ) : null}
@@ -384,15 +474,19 @@ function RetrievalTrace({ message }) {
         <summary>How I searched</summary>
         <div className="trace-section">
           <div className="trace-query-grid">
-            {(trace.generated_queries || []).map((query) => (
+            {generatedQueries.map((query) => (
               <article key={query.id} className="trace-query-card">
                 <div className="trace-query-top">
                   <div className="trace-query-id">{query.id?.toUpperCase() || "Q"}</div>
-                  {query.module_tag ? (
-                    <span className="micro-pill">Module {query.module_tag}</span>
-                  ) : null}
+                  <div className="trace-chip-row">
+                    {renderModePill(query.search_mode)}
+                    {query.module_tag ? (
+                      <span className="micro-pill">Tag {query.module_tag}</span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="trace-query-text">{query.text}</div>
+                {renderTargetFiles(query.target_files)}
                 {query.goal ? <div className="meta-text">{query.goal}</div> : null}
               </article>
             ))}
@@ -400,7 +494,7 @@ function RetrievalTrace({ message }) {
         </div>
 
         <div className="trace-section">
-          <div className="trace-section-title">Retrieved by query</div>
+          <div className="trace-section-title">Executed steps</div>
           <div className="trace-run-list">
             {retrievalRuns.map((run) => (
               <section key={run.query_id} className="trace-run-card">
@@ -409,9 +503,24 @@ function RetrievalTrace({ message }) {
                     <div className="trace-run-label">{run.query_id?.toUpperCase() || "Query"}</div>
                     <div className="trace-run-query">{run.query}</div>
                   </div>
-                  {run.module_tag ? <span className="micro-pill">{run.module_tag}</span> : null}
+                  <div className="trace-chip-row">
+                    {renderModePill(run.search_mode)}
+                    {run.module_tag ? <span className="micro-pill">Tag {run.module_tag}</span> : null}
+                  </div>
                 </div>
-                {Array.isArray(run.results) && run.results.length ? (
+                {renderTargetFiles(run.target_files)}
+                {run.search_mode === "full_document" ? (
+                  Array.isArray(fullDocumentFetchesByQuery[run.query_id]) &&
+                  fullDocumentFetchesByQuery[run.query_id].length ? (
+                    <div className="trace-result-list">
+                      {fullDocumentFetchesByQuery[run.query_id].map((item) =>
+                        renderFullDocumentFetchCard(item, `${run.query_id}-`)
+                      )}
+                    </div>
+                  ) : (
+                    <div className="empty-card compact">No full documents could be loaded for this step.</div>
+                  )
+                ) : Array.isArray(run.results) && run.results.length ? (
                   <div className="trace-result-list">
                     {run.results.map((result) => (
                       <article key={result.id} className={`trace-result-card ${result.kept_in_fusion ? "kept" : ""}`}>
@@ -428,7 +537,7 @@ function RetrievalTrace({ message }) {
                     ))}
                   </div>
                 ) : (
-                  <div className="empty-card compact">No passages retrieved for this query.</div>
+                  <div className="empty-card compact">No passages retrieved for this step.</div>
                 )}
               </section>
             ))}
@@ -437,24 +546,9 @@ function RetrievalTrace({ message }) {
 
         {fullDocumentFetches.length ? (
           <div className="trace-section">
-            <div className="trace-section-title">Full document fallback</div>
+            <div className="trace-section-title">Full document reads</div>
             <div className="trace-result-list">
-              {fullDocumentFetches.map((item) => (
-                <article key={item.source_id || item.filename} className="trace-result-card kept">
-                  <div className="trace-result-top">
-                    <div className="trace-result-file">
-                      {item.source_id ? `${item.source_id} • ` : ""}
-                      {item.filename}
-                    </div>
-                    <div className="trace-result-meta">
-                      <span>Full document</span>
-                      {item.tag ? <span>{item.tag}</span> : null}
-                      {item.source ? <span>{item.source}</span> : null}
-                    </div>
-                  </div>
-                  {item.reason ? <div className="trace-result-snippet">{item.reason}</div> : null}
-                </article>
-              ))}
+              {fullDocumentFetches.map((item) => renderFullDocumentFetchCard(item))}
             </div>
           </div>
         ) : null}
