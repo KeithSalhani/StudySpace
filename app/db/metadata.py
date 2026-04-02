@@ -17,6 +17,10 @@ class JSONDatabase:
     def _default_data() -> Dict[str, Any]:
         return {"users": {}}
 
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
     def _get_or_create_user_unlocked(self, username: str) -> Dict[str, Any]:
         users = self.data.setdefault("users", {})
         if username not in users:
@@ -28,6 +32,10 @@ class JSONDatabase:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "tags": [],
                 "notes": [],
+                "folders": [],
+                "exam_folders": [],
+                "exam_folder_analyses": {},
+                "exam_documents": {},
                 "documents": {},
                 "sessions": [],
             }
@@ -51,6 +59,10 @@ class JSONDatabase:
                 user.setdefault("created_at", datetime.now(timezone.utc).isoformat())
                 user.setdefault("tags", [])
                 user.setdefault("notes", [])
+                user.setdefault("folders", [])
+                user.setdefault("exam_folders", [])
+                user.setdefault("exam_folder_analyses", {})
+                user.setdefault("exam_documents", {})
                 user.setdefault("documents", {})
                 user.setdefault("sessions", [])
             return migrated
@@ -90,6 +102,41 @@ class JSONDatabase:
             user["password_salt"] = password_salt
             self.save()
             return self._public_user(user)
+
+    @staticmethod
+    def _analysis_summary(analysis: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(analysis, dict):
+            return None
+
+        raw_summary = analysis.get("summary")
+        summary = dict(raw_summary) if isinstance(raw_summary, dict) else {}
+        return {
+            "status": analysis.get("status"),
+            "stage": analysis.get("stage"),
+            "progress": analysis.get("progress"),
+            "updated_at": analysis.get("updated_at"),
+            "completed_at": analysis.get("completed_at"),
+            "error": analysis.get("error"),
+            "stale": bool(analysis.get("stale")),
+            "job_id": analysis.get("job_id"),
+            "model": analysis.get("model"),
+            "pipeline_version": analysis.get("pipeline_version"),
+            "summary": summary,
+        }
+
+    def _mark_exam_folder_analysis_stale_unlocked(self, user: Dict[str, Any], folder_ids: List[Optional[str]]) -> bool:
+        analyses = user.setdefault("exam_folder_analyses", {})
+        changed = False
+        for folder_id in folder_ids:
+            if not folder_id:
+                continue
+            analysis = analyses.get(folder_id)
+            if not isinstance(analysis, dict):
+                continue
+            analysis["stale"] = True
+            analysis["updated_at"] = self._now_iso()
+            changed = True
+        return changed
 
     def get_user_credentials(self, username: str) -> Optional[Dict[str, str]]:
         with self._lock:
@@ -187,6 +234,159 @@ class JSONDatabase:
             user = self.data["users"].get(username)
             return list(user.get("notes", [])) if user else []
 
+    def list_folders(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            folders = user.setdefault("folders", [])
+            return sorted(
+                [dict(folder) for folder in folders if isinstance(folder, dict)],
+                key=lambda folder: (folder.get("name") or "").lower(),
+            )
+
+    def get_folder(self, username: str, folder_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            for folder in user.setdefault("folders", []):
+                if folder.get("id") == folder_id:
+                    return dict(folder)
+            return None
+
+    def create_folder(self, username: str, name: str) -> Dict[str, Any]:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Folder name is required")
+
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            folders = user.setdefault("folders", [])
+            if any(
+                isinstance(folder, dict)
+                and (folder.get("name") or "").strip().lower() == normalized_name.lower()
+                for folder in folders
+            ):
+                raise ValueError("Folder already exists")
+
+            folder = {
+                "id": uuid.uuid4().hex,
+                "name": normalized_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            folders.append(folder)
+            self.save()
+            return dict(folder)
+
+    def list_exam_folders(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            folders = user.setdefault("exam_folders", [])
+            analyses = user.setdefault("exam_folder_analyses", {})
+            return sorted(
+                [
+                    {
+                        **dict(folder),
+                        "analysis": self._analysis_summary(analyses.get(folder.get("id"))),
+                    }
+                    for folder in folders
+                    if isinstance(folder, dict)
+                ],
+                key=lambda folder: (folder.get("name") or "").lower(),
+            )
+
+    def get_exam_folder(self, username: str, folder_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            for folder in user.setdefault("exam_folders", []):
+                if folder.get("id") == folder_id:
+                    return dict(folder)
+            return None
+
+    def create_exam_folder(self, username: str, name: str) -> Dict[str, Any]:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Folder name is required")
+
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            folders = user.setdefault("exam_folders", [])
+            if any(
+                isinstance(folder, dict)
+                and (folder.get("name") or "").strip().lower() == normalized_name.lower()
+                for folder in folders
+            ):
+                raise ValueError("Folder already exists")
+
+            folder = {
+                "id": uuid.uuid4().hex,
+                "name": normalized_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            folders.append(folder)
+            self.save()
+            return dict(folder)
+
+    def get_exam_folder_analysis(self, username: str, folder_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            analysis = user.setdefault("exam_folder_analyses", {}).get(folder_id)
+            return dict(analysis) if isinstance(analysis, dict) else None
+
+    def save_exam_folder_analysis(self, username: str, folder_id: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+            analyses = user.setdefault("exam_folder_analyses", {})
+            analyses[folder_id] = dict(analysis)
+            self.save()
+            return dict(analyses[folder_id])
+
+    def update_exam_folder_analysis(
+        self,
+        username: str,
+        folder_id: str,
+        **updates: Any,
+    ) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+            analyses = user.setdefault("exam_folder_analyses", {})
+            current = analyses.get(folder_id)
+            if not isinstance(current, dict):
+                current = {
+                    "folder_id": folder_id,
+                    "status": "idle",
+                    "stage": "",
+                    "progress": 0,
+                    "summary": {},
+                    "result": None,
+                    "error": None,
+                    "stale": False,
+                    "created_at": self._now_iso(),
+                }
+            next_analysis = dict(current)
+            next_analysis.update(updates)
+            next_analysis["updated_at"] = self._now_iso()
+            analyses[folder_id] = next_analysis
+            self.save()
+            return dict(next_analysis)
+
     def add_note(self, username: str, content: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             user = self.data["users"].get(username)
@@ -220,8 +420,97 @@ class JSONDatabase:
             if not user:
                 return
             documents = user.setdefault("documents", {})
-            documents[filename] = metadata
+            existing = documents.get(filename, {})
+            next_metadata = dict(existing) if isinstance(existing, dict) else {}
+            next_metadata.update(metadata)
+            documents[filename] = next_metadata
             self.save()
+
+    def set_document_folder(self, username: str, filename: str, folder_id: Optional[str]) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            documents = user.setdefault("documents", {})
+            if filename not in documents:
+                documents[filename] = {}
+
+            folder_name = None
+            normalized_folder_id = folder_id or None
+            if normalized_folder_id:
+                folder = None
+                for item in user.setdefault("folders", []):
+                    if item.get("id") == normalized_folder_id:
+                        folder = item
+                        break
+                if not folder:
+                    raise ValueError("Folder not found")
+                folder_name = folder.get("name")
+
+            next_metadata = dict(documents.get(filename, {}))
+            next_metadata["folder_id"] = normalized_folder_id
+            next_metadata["folder_name"] = folder_name
+            documents[filename] = next_metadata
+            self.save()
+            return dict(next_metadata)
+
+    def list_exam_documents(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            documents = user.setdefault("exam_documents", {})
+            return sorted(
+                [dict(item) for item in documents.values() if isinstance(item, dict)],
+                key=lambda item: ((item.get("folder_name") or "").lower(), (item.get("filename") or "").lower()),
+            )
+
+    def add_exam_document(self, username: str, document: Dict[str, Any]) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+            doc_id = document.get("id") or uuid.uuid4().hex
+            next_document = dict(document)
+            next_document["id"] = doc_id
+            user.setdefault("exam_documents", {})[doc_id] = next_document
+            self._mark_exam_folder_analysis_stale_unlocked(user, [next_document.get("folder_id")])
+            self.save()
+            return dict(next_document)
+
+    def get_exam_document(self, username: str, document_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            document = user.setdefault("exam_documents", {}).get(document_id)
+            return dict(document) if isinstance(document, dict) else None
+
+    def update_exam_document_folder(self, username: str, document_id: str, folder_id: str) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+
+            document = user.setdefault("exam_documents", {}).get(document_id)
+            if not isinstance(document, dict):
+                raise ValueError("Exam document not found")
+
+            folder = None
+            for item in user.setdefault("exam_folders", []):
+                if item.get("id") == folder_id:
+                    folder = item
+                    break
+            if not folder:
+                raise ValueError("Folder not found")
+
+            previous_folder_id = document.get("folder_id")
+            document["folder_id"] = folder["id"]
+            document["folder_name"] = folder["name"]
+            self._mark_exam_folder_analysis_stale_unlocked(user, [previous_folder_id, folder["id"]])
+            self.save()
+            return dict(document)
 
     def delete_document_metadata(self, username: str, filename: str) -> bool:
         with self._lock:

@@ -48,6 +48,40 @@ def test_add_document(vector_store):
     assert doc_id in vector_store.documents
     assert vector_store.documents[doc_id]["content"] == content
 
+
+def test_add_document_sanitizes_nullable_and_nested_metadata(vector_store):
+    content = "Test content"
+    doc_id = "doc1"
+    metadata = {
+        "filename": "test.txt",
+        "tag": None,
+        "folder_id": None,
+        "extra": {"course": "Security"},
+    }
+
+    vector_store.embedding_model.encode.return_value = np.array([[0.1, 0.2]])
+
+    vector_store.add_document(doc_id, content, metadata)
+
+    vector_store.collection.add.assert_called_once_with(
+        embeddings=[[0.1, 0.2]],
+        documents=["Test content"],
+        metadatas=[
+            {
+                "filename": "test.txt",
+                "extra": '{"course": "Security"}',
+                "doc_id": "doc1",
+                "chunk_index": 0,
+                "total_chunks": 1,
+            }
+        ],
+        ids=["doc1_chunk_0"],
+    )
+    assert vector_store.documents[doc_id]["metadata"] == {
+        "filename": "test.txt",
+        "extra": '{"course": "Security"}',
+    }
+
 def test_search(vector_store):
     # Setup
     vector_store.embedding_model.encode.return_value = np.array([[0.1, 0.2]])

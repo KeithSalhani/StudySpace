@@ -21,6 +21,9 @@ def main_module(monkeypatch, tmp_path):
     quiz_generator = MagicMock(name="quiz_generator")
     flashcard_generator = MagicMock(name="flashcard_generator")
     metadata_extractor = MagicMock(name="metadata_extractor")
+    topic_miner = MagicMock(name="topic_miner")
+    topic_miner.model_id = "gemini-test"
+    topic_miner.pipeline_version = "topic-miner-test"
 
     fake_ingestion = types.ModuleType("app.core.ingestion")
     fake_ingestion.DocumentProcessor = lambda: doc_processor
@@ -40,12 +43,16 @@ def main_module(monkeypatch, tmp_path):
     fake_metadata = types.ModuleType("app.core.metadata_extractor")
     fake_metadata.MetadataExtractor = lambda api_key: metadata_extractor
 
+    fake_topic_miner = types.ModuleType("app.core.topic_miner")
+    fake_topic_miner.TopicMiner = lambda processor, api_key: topic_miner
+
     monkeypatch.setitem(sys.modules, "app.core.ingestion", fake_ingestion)
     monkeypatch.setitem(sys.modules, "app.db.vector_store", fake_vector_store)
     monkeypatch.setitem(sys.modules, "app.core.rag", fake_rag)
     monkeypatch.setitem(sys.modules, "app.core.quiz_generator", fake_quiz)
     monkeypatch.setitem(sys.modules, "app.core.flashcard_generator", fake_flashcards)
     monkeypatch.setitem(sys.modules, "app.core.metadata_extractor", fake_metadata)
+    monkeypatch.setitem(sys.modules, "app.core.topic_miner", fake_topic_miner)
 
     imported = importlib.import_module("app.main")
 
@@ -61,10 +68,12 @@ def main_module(monkeypatch, tmp_path):
     imported.db = test_db
     imported.app.state.db = test_db
     imported.upload_jobs.database = test_db
+    imported.topic_mining_jobs.database = test_db
 
     yield imported
 
     imported.upload_jobs.stop()
+    imported.topic_mining_jobs.stop()
     sys.modules.pop("app.main", None)
 
 

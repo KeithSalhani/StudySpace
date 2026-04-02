@@ -17,8 +17,8 @@ import threading
 import time
 import uuid
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -48,6 +48,7 @@ from app.core.rag import RAGChat
 from app.core.quiz_generator import QuizGenerator
 from app.core.flashcard_generator import FlashcardGenerator
 from app.core.metadata_extractor import MetadataExtractor
+from app.core.topic_miner import TopicMiner
 from app.db.metadata import JSONDatabase
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 metadata_extractor = MetadataExtractor(GEMINI_API_KEY)
+topic_miner = TopicMiner(doc_processor, GEMINI_API_KEY)
 db = JSONDatabase()
 
 
@@ -83,6 +85,12 @@ def _user_upload_dir(username: str) -> Path:
 
 def _user_processed_dir(username: str) -> Path:
     path = _user_root(username) / "processed"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _user_exam_papers_dir(username: str) -> Path:
+    path = _user_root(username) / "exam_papers"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -135,7 +143,28 @@ class UploadJob:
     completed_at: Optional[str] = None
     doc_id: Optional[str] = None
     predicted_tag: Optional[str] = None
+    folder_id: Optional[str] = None
+    folder_name: Optional[str] = None
     processing_time_seconds: Optional[float] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class TopicMiningJob:
+    job_id: str
+    owner_username: str
+    folder_id: str
+    folder_name: str
+    status: str
+    stage: str
+    progress: int
+    created_at: str
+    updated_at: str
+    created_ts: float
+    updated_ts: float
+    total_documents: int
+    model: str
+    completed_at: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -176,7 +205,14 @@ class UploadJobManager:
         if worker and worker.is_alive():
             worker.join(timeout=timeout)
 
-    def enqueue(self, owner_username: str, filename: str, file_path: Path) -> Dict[str, Any]:
+    def enqueue(
+        self,
+        owner_username: str,
+        filename: str,
+        file_path: Path,
+        folder_id: Optional[str] = None,
+        folder_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
         now, now_ts = self._now()
         job = UploadJob(
             job_id=uuid.uuid4().hex,
@@ -190,6 +226,8 @@ class UploadJobManager:
             updated_at=now,
             created_ts=now_ts,
             updated_ts=now_ts,
+            folder_id=folder_id,
+            folder_name=folder_name,
         )
 
         with self._lock:
@@ -278,6 +316,8 @@ class UploadJobManager:
             owner_username = job.owner_username
             filename = job.filename
             file_path = Path(job.file_path)
+            folder_id = job.folder_id
+            folder_name = job.folder_name
 
         started_at, _ = self._now()
         started = time.perf_counter()
@@ -320,7 +360,19 @@ class UploadJobManager:
 
             self._update_job(job_id, stage="Extracting academic metadata", progress=70)
             extracted_metadata = self.extractor.extract_metadata(content)
-            self.database.set_document_metadata(owner_username, filename, extracted_metadata)
+            self.database.set_document_metadata(
+                owner_username,
+                filename,
+                {
+                    **extracted_metadata,
+                    "filename": filename,
+                    "path": str(file_path),
+                    "processed_path": str(processed_path),
+                    "folder_id": folder_id,
+                    "folder_name": folder_name,
+                    "tag": predicted_tag,
+                },
+            )
 
             self._update_job(job_id, stage="Indexing in vector database", progress=85)
             doc_id = f"{filename}_{uuid.uuid4().hex[:8]}"
@@ -330,6 +382,8 @@ class UploadJobManager:
                 "path": str(file_path),
                 "processed_path": str(processed_path),
                 "tag": predicted_tag,
+                "folder_id": folder_id,
+                "folder_name": folder_name,
             }
             self.store.add_document(doc_id, content, metadata)
 
@@ -400,16 +454,289 @@ class UploadJobManager:
                     self._pending_order.remove(job_id)
 
 
+class TopicMiningJobManager:
+    def __init__(
+        self,
+        miner: TopicMiner,
+        database: JSONDatabase,
+        max_history: int = 50,
+    ):
+        self.miner = miner
+        self.database = database
+        self.max_history = max_history
+
+        self._jobs: Dict[str, TopicMiningJob] = {}
+        self._pending_order: List[str] = []
+        self._queue: Queue[Optional[str]] = Queue()
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._worker: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._worker and self._worker.is_alive():
+                return
+            self._stop_event.clear()
+            self._worker = threading.Thread(
+                target=self._worker_loop,
+                name="topic-miner-worker",
+                daemon=True,
+            )
+            self._worker.start()
+
+    def stop(self, timeout: float = 10.0) -> None:
+        self._stop_event.set()
+        self._queue.put(None)
+        worker = self._worker
+        if worker and worker.is_alive():
+            worker.join(timeout=timeout)
+
+    def enqueue(
+        self,
+        owner_username: str,
+        folder_id: str,
+        folder_name: str,
+        total_documents: int,
+    ) -> Dict[str, Any]:
+        existing = self.database.get_exam_folder_analysis(owner_username, folder_id)
+        if isinstance(existing, dict) and existing.get("status") in {
+            UploadJobStatus.QUEUED.value,
+            UploadJobStatus.PROCESSING.value,
+        }:
+            raise ValueError("Topic mining is already running for this folder")
+
+        now, now_ts = self._now()
+        job = TopicMiningJob(
+            job_id=uuid.uuid4().hex,
+            owner_username=owner_username,
+            folder_id=folder_id,
+            folder_name=folder_name,
+            status=UploadJobStatus.QUEUED.value,
+            stage="Queued for topic mining",
+            progress=0,
+            created_at=now,
+            updated_at=now,
+            created_ts=now_ts,
+            updated_ts=now_ts,
+            total_documents=total_documents,
+            model=self.miner.model_id,
+        )
+
+        with self._lock:
+            self._jobs[job.job_id] = job
+            self._pending_order.append(job.job_id)
+            self._trim_history_unlocked()
+
+        self.database.update_exam_folder_analysis(
+            owner_username,
+            folder_id,
+            folder_name=folder_name,
+            job_id=job.job_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            completed_at=None,
+            error=None,
+            stale=False,
+            model=self.miner.model_id,
+            pipeline_version=self.miner.pipeline_version,
+            summary={
+                "paper_count": total_documents,
+                "analyzed_paper_count": 0,
+                "theme_count": 0,
+                "question_count": 0,
+            },
+            result=None,
+        )
+        self._queue.put(job.job_id)
+        return self._to_public(job)
+
+    def _worker_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                job_id = self._queue.get(timeout=0.5)
+            except Empty:
+                continue
+
+            if job_id is None:
+                if self._stop_event.is_set():
+                    break
+                continue
+
+            try:
+                self._process_job(job_id)
+            finally:
+                self._queue.task_done()
+
+    def _process_job(self, job_id: str) -> None:
+        job = self._update_job(
+            job_id,
+            status=UploadJobStatus.PROCESSING.value,
+            stage="Preparing exam papers",
+            progress=5,
+        )
+        if not job:
+            return
+
+        self.database.update_exam_folder_analysis(
+            job.owner_username,
+            job.folder_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            error=None,
+        )
+
+        documents = [
+            document
+            for document in self.database.list_exam_documents(job.owner_username)
+            if document.get("folder_id") == job.folder_id
+        ]
+        if not documents:
+            self._fail_job(job_id, "No exam papers found in this folder")
+            return
+
+        try:
+            result = self.miner.analyze_folder(
+                job.folder_name,
+                documents,
+                progress_callback=lambda stage, progress: self._update_topic_mining_progress(
+                    job_id,
+                    stage,
+                    progress,
+                ),
+            )
+            now, _ = self._now()
+            completed_job = self._update_job(
+                job_id,
+                status=UploadJobStatus.COMPLETED.value,
+                stage="Topic mining complete",
+                progress=100,
+                completed_at=now,
+                error=None,
+            )
+            if not completed_job:
+                return
+
+            self.database.update_exam_folder_analysis(
+                completed_job.owner_username,
+                completed_job.folder_id,
+                folder_name=completed_job.folder_name,
+                job_id=completed_job.job_id,
+                status=completed_job.status,
+                stage=completed_job.stage,
+                progress=completed_job.progress,
+                completed_at=completed_job.completed_at,
+                error=None,
+                model=result.get("model") or self.miner.model_id,
+                pipeline_version=result.get("pipeline_version") or self.miner.pipeline_version,
+                summary=result.get("summary") or {},
+                result=result,
+            )
+        except Exception as exc:
+            logger.error("Topic mining failed for folder %s: %s", job.folder_name, exc)
+            self._fail_job(job_id, str(exc))
+
+    def _update_topic_mining_progress(self, job_id: str, stage: str, progress: int) -> None:
+        job = self._update_job(job_id, stage=stage, progress=progress)
+        if not job:
+            return
+        self.database.update_exam_folder_analysis(
+            job.owner_username,
+            job.folder_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            error=None,
+        )
+
+    def _fail_job(self, job_id: str, error_message: str) -> None:
+        job = self._update_job(
+            job_id,
+            status=UploadJobStatus.FAILED.value,
+            stage="Topic mining failed",
+            error=error_message,
+        )
+        if not job:
+            return
+        self.database.update_exam_folder_analysis(
+            job.owner_username,
+            job.folder_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            error=error_message,
+            completed_at=None,
+        )
+
+    @staticmethod
+    def _now() -> tuple[str, float]:
+        dt = datetime.now(timezone.utc)
+        return dt.isoformat(), dt.timestamp()
+
+    def _update_job(self, job_id: str, **updates: Any) -> Optional[TopicMiningJob]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+
+            for key, value in updates.items():
+                setattr(job, key, value)
+            job.updated_at, job.updated_ts = self._now()
+
+            if job.status != UploadJobStatus.QUEUED.value and job.job_id in self._pending_order:
+                self._pending_order.remove(job.job_id)
+
+            return job
+
+    def _to_public(self, job: TopicMiningJob) -> Dict[str, Any]:
+        item = asdict(job)
+        item.pop("owner_username", None)
+        item.pop("created_ts", None)
+        item.pop("updated_ts", None)
+        return item
+
+    def _trim_history_unlocked(self) -> None:
+        if len(self._jobs) <= self.max_history:
+            return
+
+        active = {
+            job_id
+            for job_id, job in self._jobs.items()
+            if job.status in {UploadJobStatus.QUEUED.value, UploadJobStatus.PROCESSING.value}
+        }
+
+        finished = [
+            (job_id, job.updated_ts)
+            for job_id, job in self._jobs.items()
+            if job.status in {UploadJobStatus.COMPLETED.value, UploadJobStatus.FAILED.value}
+        ]
+        finished.sort(key=lambda item: item[1], reverse=True)
+
+        keep_finished_count = max(0, self.max_history - len(active))
+        keep_finished_ids = {job_id for job_id, _ in finished[:keep_finished_count]}
+        keep = active.union(keep_finished_ids)
+
+        for job_id in list(self._jobs.keys()):
+            if job_id not in keep:
+                self._jobs.pop(job_id, None)
+                if job_id in self._pending_order:
+                    self._pending_order.remove(job_id)
+
+
 upload_jobs = UploadJobManager(doc_processor, db, vector_store, metadata_extractor)
+topic_mining_jobs = TopicMiningJobManager(topic_miner, db)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     upload_jobs.start()
+    topic_mining_jobs.start()
     try:
         yield
     finally:
         upload_jobs.stop()
+        topic_mining_jobs.stop()
 
 
 app = FastAPI(title="Student Study Hub RAG Chat", lifespan=lifespan)
@@ -450,6 +777,22 @@ class NoteRequest(BaseModel):
     content: str
 
 
+class FolderRequest(BaseModel):
+    name: str
+
+
+class DocumentFolderRequest(BaseModel):
+    folder_id: Optional[str] = None
+
+
+class ExamFolderRequest(BaseModel):
+    name: str
+
+
+class ExamDocumentFolderRequest(BaseModel):
+    folder_id: str
+
+
 class QuizRequest(BaseModel):
     filename: str
     num_questions: int = 5
@@ -471,6 +814,35 @@ def _get_owned_document_metadata(owner_username: str, filename: str) -> Dict[str
     if not metadata:
         raise HTTPException(status_code=404, detail="Document not found")
     return metadata
+
+
+def _get_owned_folder(owner_username: str, folder_id: str) -> Dict[str, Any]:
+    folder = db.get_folder(owner_username, folder_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    return folder
+
+
+def _get_owned_exam_folder(owner_username: str, folder_id: str) -> Dict[str, Any]:
+    folder = db.get_exam_folder(owner_username, folder_id)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Exam folder not found")
+    return folder
+
+
+def _get_owned_exam_document(owner_username: str, document_id: str) -> Dict[str, Any]:
+    document = db.get_exam_document(owner_username, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Exam paper not found")
+    return document
+
+
+def _list_exam_folder_documents(owner_username: str, folder_id: str) -> List[Dict[str, Any]]:
+    return [
+        document
+        for document in db.list_exam_documents(owner_username)
+        if document.get("folder_id") == folder_id
+    ]
 
 
 def _ensure_selected_files_owned(
@@ -571,6 +943,7 @@ async def auth_logout(
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...),
+    folder_id: Optional[str] = Form(default=None),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Upload and enqueue a document for background processing"""
@@ -582,11 +955,18 @@ async def upload_document(
     file_path = _user_upload_dir(current_user.username) / storage_name
 
     try:
+        folder = None
+        normalized_folder_id = folder_id.strip() if isinstance(folder_id, str) else None
+        if normalized_folder_id:
+            folder = _get_owned_folder(current_user.username, normalized_folder_id)
+
         await asyncio.to_thread(_save_upload_file, file.file, file_path)
         job = upload_jobs.enqueue(
             owner_username=current_user.username,
             filename=filename,
             file_path=file_path,
+            folder_id=folder["id"] if folder else None,
+            folder_name=folder["name"] if folder else None,
         )
         return {
             "message": f"Document '{filename}' upload accepted",
@@ -642,6 +1022,22 @@ async def list_documents(current_user: AuthenticatedUser = Depends(get_current_u
     return {"documents": vector_store.list_documents(current_user.username)}
 
 
+@app.get("/documents/{filename}/file")
+async def get_document_file(filename: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    metadata = _get_owned_document_metadata(current_user.username, filename)
+    file_path = Path(metadata["path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+    media_type = "application/pdf" if filename.lower().endswith(".pdf") else None
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=filename,
+        content_disposition_type="inline",
+    )
+
+
 @app.delete("/documents/{filename}")
 async def delete_document(filename: str, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Delete a document"""
@@ -673,6 +1069,7 @@ async def delete_document(filename: str, current_user: AuthenticatedUser = Depen
 class DocumentTagRequest(BaseModel):
     tag: Optional[str] = None
 
+
 @app.put("/documents/{filename}/tag")
 async def update_document_tag(filename: str, request: DocumentTagRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
     """Update the tag for a document"""
@@ -701,6 +1098,199 @@ async def update_document_tag(filename: str, request: DocumentTagRequest, curren
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating document tag: {str(e)}")
+
+
+@app.put("/documents/{filename}/folder")
+async def update_document_folder(
+    filename: str,
+    request: DocumentFolderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Move a document into or out of a folder."""
+    try:
+        _get_owned_document_metadata(current_user.username, filename)
+        folder = None
+        normalized_folder_id = request.folder_id.strip() if isinstance(request.folder_id, str) else None
+        if normalized_folder_id:
+            folder = _get_owned_folder(current_user.username, normalized_folder_id)
+
+        db.set_document_folder(current_user.username, filename, folder["id"] if folder else None)
+        success = vector_store.update_document_folder(
+            current_user.username,
+            filename,
+            folder["id"] if folder else None,
+            folder["name"] if folder else None,
+        )
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update document folder")
+
+        return {
+            "message": "Document folder updated successfully",
+            "folder_id": folder["id"] if folder else None,
+            "folder_name": folder["name"] if folder else None,
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating document folder: {str(e)}")
+
+
+@app.get("/folders")
+async def list_folders(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {"folders": db.list_folders(current_user.username)}
+
+
+@app.post("/folders", status_code=status.HTTP_201_CREATED)
+async def create_folder(request: FolderRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    try:
+        folder = db.create_folder(current_user.username, request.name)
+        return {"message": "Folder created successfully", "folder": folder}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/exam-folders")
+async def list_exam_folders(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {"folders": db.list_exam_folders(current_user.username)}
+
+
+@app.post("/exam-folders", status_code=status.HTTP_201_CREATED)
+async def create_exam_folder(
+    request: ExamFolderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        folder = db.create_exam_folder(current_user.username, request.name)
+        return {"message": "Exam folder created successfully", "folder": folder}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/exam-folders/{folder_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
+async def analyze_exam_folder(
+    folder_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    folder = _get_owned_exam_folder(current_user.username, folder_id)
+    documents = _list_exam_folder_documents(current_user.username, folder_id)
+    if not documents:
+        raise HTTPException(status_code=400, detail="No exam papers found in this folder")
+
+    try:
+        job = topic_mining_jobs.enqueue(
+            owner_username=current_user.username,
+            folder_id=folder["id"],
+            folder_name=folder["name"],
+            total_documents=len(documents),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    analysis = db.get_exam_folder_analysis(current_user.username, folder_id)
+    return {
+        "message": "Topic mining started",
+        "job": job,
+        "analysis": analysis,
+    }
+
+
+@app.get("/exam-folders/{folder_id}/analysis")
+async def get_exam_folder_analysis(
+    folder_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _get_owned_exam_folder(current_user.username, folder_id)
+    analysis = db.get_exam_folder_analysis(current_user.username, folder_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="No topic analysis found for this folder")
+    return analysis
+
+
+@app.get("/exam-papers")
+async def list_exam_papers(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {"documents": db.list_exam_documents(current_user.username)}
+
+
+@app.post("/exam-papers/upload", status_code=status.HTTP_201_CREATED)
+async def upload_exam_paper(
+    file: UploadFile = File(...),
+    folder_id: str = Form(...),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    filename = os.path.basename(file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    folder = _get_owned_exam_folder(current_user.username, folder_id)
+    storage_name = f"{uuid.uuid4().hex}_{filename}"
+    file_path = _user_exam_papers_dir(current_user.username) / storage_name
+
+    try:
+        await asyncio.to_thread(_save_upload_file, file.file, file_path)
+        document = db.add_exam_document(
+            current_user.username,
+            {
+                "id": uuid.uuid4().hex,
+                "filename": filename,
+                "folder_id": folder["id"],
+                "folder_name": folder["name"],
+                "path": str(file_path),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "content_type": "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream",
+            },
+        )
+        return {"message": "Exam paper uploaded successfully", "document": document}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Error uploading exam paper: {str(exc)}")
+    finally:
+        await file.close()
+
+
+@app.put("/exam-papers/{document_id}/folder")
+async def move_exam_paper(
+    document_id: str,
+    request: ExamDocumentFolderRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    try:
+        document = _get_owned_exam_document(current_user.username, document_id)
+        del document
+        updated = db.update_exam_document_folder(current_user.username, document_id, request.folder_id)
+        return {
+            "message": "Exam paper moved successfully",
+            "document": updated,
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/exam-papers/{document_id}/file")
+async def get_exam_paper_file(
+    document_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    document = _get_owned_exam_document(current_user.username, document_id)
+    file_path = Path(document["path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Exam paper file not found")
+
+    media_type = document.get("content_type") or (
+        "application/pdf" if str(document.get("filename", "")).lower().endswith(".pdf") else None
+    )
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=document.get("filename"),
+        content_disposition_type="inline",
+    )
 
 # Tag Endpoints
 @app.get("/tags")

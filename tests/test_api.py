@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException, Response, UploadFile
@@ -81,12 +82,122 @@ async def test_chat_endpoint_with_selected_files_scoped_to_user(main_module):
 
 @pytest.mark.asyncio
 async def test_documents_are_isolated_per_user(main_module):
-    main_module.vector_store.list_documents.return_value = [{"filename": "alice.pdf", "tag": "Security"}]
+    main_module.vector_store.list_documents.return_value = [
+        {"filename": "alice.pdf", "tag": "Security", "folder_id": None, "folder_name": None}
+    ]
 
     response = await main_module.list_documents(current_user=user())
 
-    assert response == {"documents": [{"filename": "alice.pdf", "tag": "Security"}]}
+    assert response == {
+        "documents": [{"filename": "alice.pdf", "tag": "Security", "folder_id": None, "folder_name": None}]
+    }
     main_module.vector_store.list_documents.assert_called_once_with("alice")
+
+
+@pytest.mark.asyncio
+async def test_create_folder_returns_folder(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+
+    response = await main_module.create_folder(
+        main_module.FolderRequest(name="Past Papers"),
+        current_user=user(),
+    )
+
+    assert response["folder"]["name"] == "Past Papers"
+    assert len(main_module.app.state.db.list_folders("alice")) == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_exam_folder_enqueues_topic_mining(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    folder = main_module.app.state.db.create_exam_folder("alice", "Security")
+    main_module.app.state.db.add_exam_document(
+        "alice",
+        {
+            "id": "paper-1",
+            "filename": "security.pdf",
+            "folder_id": folder["id"],
+            "folder_name": folder["name"],
+            "path": "/tmp/security.pdf",
+            "created_at": "2026-03-25T18:00:00+00:00",
+            "content_type": "application/pdf",
+        },
+    )
+
+    response = await main_module.analyze_exam_folder(folder["id"], current_user=user())
+
+    assert response["message"] == "Topic mining started"
+    assert response["job"]["folder_id"] == folder["id"]
+    assert response["analysis"]["status"] == "queued"
+    assert response["analysis"]["summary"]["paper_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_exam_folder_analysis_returns_saved_payload(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    folder = main_module.app.state.db.create_exam_folder("alice", "Networks")
+    main_module.app.state.db.update_exam_folder_analysis(
+        "alice",
+        folder["id"],
+        folder_name=folder["name"],
+        status="completed",
+        stage="Topic mining complete",
+        progress=100,
+        model="gemini-test",
+        pipeline_version="topic-miner-v1",
+        summary={"paper_count": 2, "theme_count": 3, "question_count": 8},
+        result={"themes": [{"canonical_topic": "Network Security"}]},
+        error=None,
+        stale=False,
+    )
+
+    response = await main_module.get_exam_folder_analysis(folder["id"], current_user=user())
+
+    assert response["status"] == "completed"
+    assert response["result"]["themes"][0]["canonical_topic"] == "Network Security"
+
+
+@pytest.mark.asyncio
+async def test_update_document_folder_endpoint(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    folder = main_module.app.state.db.create_folder("alice", "Networks")
+    main_module.app.state.db.set_document_metadata("alice", "test.pdf", {"assessments": []})
+    main_module.vector_store.get_document_metadata.return_value = {
+        "filename": "test.pdf",
+        "owner_username": "alice",
+    }
+    main_module.vector_store.update_document_folder.return_value = True
+
+    response = await main_module.update_document_folder(
+        "test.pdf",
+        main_module.DocumentFolderRequest(folder_id=folder["id"]),
+        current_user=user(),
+    )
+
+    assert response["folder_id"] == folder["id"]
+    assert main_module.app.state.db.get_all_metadata("alice")["test.pdf"]["folder_name"] == "Networks"
+    main_module.vector_store.update_document_folder.assert_called_once_with(
+        "alice",
+        "test.pdf",
+        folder["id"],
+        "Networks",
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_document_file_returns_owned_file(main_module, tmp_path):
+    document_path = tmp_path / "exam.pdf"
+    document_path.write_bytes(b"%PDF-1.4 test")
+    main_module.vector_store.get_document_metadata.return_value = {
+        "filename": "exam.pdf",
+        "owner_username": "alice",
+        "path": str(document_path),
+    }
+
+    response = await main_module.get_document_file("exam.pdf", current_user=user())
+
+    assert response.path == str(document_path)
+    assert response.media_type == "application/pdf"
 
 
 @pytest.mark.asyncio
@@ -209,3 +320,22 @@ async def test_upload_document_rejects_invalid_filename(main_module):
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Invalid filename"
+
+
+@pytest.mark.asyncio
+async def test_upload_document_accepts_folder_id(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    folder = main_module.app.state.db.create_folder("alice", "Past Papers")
+    upload = UploadFile(filename="exam.pdf", file=BytesIO(b"content"))
+    main_module.upload_jobs.enqueue = MagicMock(return_value={"job_id": "job-1"})
+
+    response = await main_module.upload_document(
+        upload,
+        folder_id=folder["id"],
+        current_user=user(),
+    )
+
+    assert response["job"]["job_id"] == "job-1"
+    enqueue_kwargs = main_module.upload_jobs.enqueue.call_args.kwargs
+    assert enqueue_kwargs["folder_id"] == folder["id"]
+    assert enqueue_kwargs["folder_name"] == "Past Papers"

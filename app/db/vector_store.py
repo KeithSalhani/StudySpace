@@ -1,6 +1,7 @@
 """
 Vector store module using ChromaDB and sentence transformers
 """
+import json
 import logging
 import os
 import threading
@@ -36,6 +37,23 @@ class VectorStore:
         self._load_documents_from_collection()
 
         logger.info("Vector store initialized")
+
+    def _sanitize_metadata(self, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Normalize metadata to Chroma-compatible scalar values."""
+        if not metadata:
+            return {}
+
+        sanitized: Dict[str, Any] = {}
+        for key, value in metadata.items():
+            if value is None:
+                continue
+            if isinstance(value, (str, int, float, bool)):
+                sanitized[key] = value
+                continue
+
+            sanitized[key] = json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+        return sanitized
 
     def _load_documents_from_collection(self):
         """Load existing documents metadata from ChromaDB collection"""
@@ -92,7 +110,7 @@ class VectorStore:
                 metadatas = []
 
                 for i, chunk in enumerate(chunks):
-                    chunk_metadata = metadata.copy() if metadata else {}
+                    chunk_metadata = self._sanitize_metadata(metadata)
                     chunk_metadata.update({
                         "doc_id": doc_id,
                         "chunk_index": i,
@@ -111,7 +129,7 @@ class VectorStore:
                 # Store document info
                 self.documents[doc_id] = {
                     "content": content,
-                    "metadata": metadata or {},
+                    "metadata": self._sanitize_metadata(metadata),
                     "chunks": len(chunks)
                 }
 
@@ -279,7 +297,7 @@ class VectorStore:
         context = "\n\n".join(context_parts)
         return context, sources
 
-    def list_documents(self, owner_username: str) -> List[Dict[str, str]]:
+    def list_documents(self, owner_username: str) -> List[Dict[str, Any]]:
         """List unique documents and their tags."""
         with self._lock:
             unique_docs = {}
@@ -292,7 +310,12 @@ class VectorStore:
                 if filename not in unique_docs:
                     unique_docs[filename] = {
                         "filename": filename,
-                        "tag": metadata.get("tag") or "Uncategorized"
+                        "tag": metadata.get("tag") or "Uncategorized",
+                        "folder_id": metadata.get("folder_id"),
+                        "folder_name": metadata.get("folder_name"),
+                        "content_type": "application/pdf"
+                        if str(filename).lower().endswith(".pdf")
+                        else "application/octet-stream",
                     }
             return list(unique_docs.values())
 
@@ -392,7 +415,7 @@ class VectorStore:
                     ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
                     metadatas = []
                     for i in range(num_chunks):
-                        chunk_meta = metadata.copy()
+                        chunk_meta = self._sanitize_metadata(metadata)
                         chunk_meta.update({
                             "doc_id": doc_id,
                             "chunk_index": i,
@@ -408,6 +431,60 @@ class VectorStore:
 
         except Exception as e:
             logger.error(f"Error updating tag for document {filename}: {str(e)}")
+            return False
+
+    def update_document_folder(
+        self,
+        owner_username: str,
+        filename: str,
+        folder_id: Optional[str],
+        folder_name: Optional[str],
+    ) -> bool:
+        """Update folder metadata for all chunks of a specific document."""
+        try:
+            with self._lock:
+                doc_ids_to_update = []
+                for doc_id, doc_data in self.documents.items():
+                    metadata = doc_data.get("metadata", {})
+                    if metadata.get("owner_username") == owner_username and metadata.get("filename") == filename:
+                        doc_ids_to_update.append((doc_id, metadata, doc_data["chunks"]))
+
+                if not doc_ids_to_update:
+                    return False
+
+                for doc_id, metadata, num_chunks in doc_ids_to_update:
+                    if folder_id is not None:
+                        metadata["folder_id"] = folder_id
+                    else:
+                        metadata.pop("folder_id", None)
+
+                    if folder_name is not None:
+                        metadata["folder_name"] = folder_name
+                    else:
+                        metadata.pop("folder_name", None)
+
+                    sanitized_metadata = self._sanitize_metadata(metadata)
+                    metadata.clear()
+                    metadata.update(sanitized_metadata)
+
+                    ids = [f"{doc_id}_chunk_{i}" for i in range(num_chunks)]
+                    metadatas = []
+                    for i in range(num_chunks):
+                        chunk_meta = dict(metadata)
+                        chunk_meta.update({
+                            "doc_id": doc_id,
+                            "chunk_index": i,
+                            "total_chunks": num_chunks,
+                        })
+                        metadatas.append(chunk_meta)
+
+                    self.collection.update(ids=ids, metadatas=metadatas)
+
+                logger.info("Updated folder for document %s", filename)
+                return True
+
+        except Exception as e:
+            logger.error(f"Error updating folder for document {filename}: {str(e)}")
             return False
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:

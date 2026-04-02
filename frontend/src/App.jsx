@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Calendar from "./Calendar";
+import TopicMinerWorkspace from "./TopicMinerWorkspace";
 import {
   createNote,
   createTag,
@@ -1042,7 +1043,6 @@ export default function App() {
   const [liveRegionMessage, setLiveRegionMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState("");
-
   const fileInputRef = useRef(null);
   const chatBodyRef = useRef(null);
   const seenCompletedJobsRef = useRef(new Set());
@@ -1051,9 +1051,9 @@ export default function App() {
   const speechBaseInputRef = useRef("");
   const speechCommittedTextRef = useRef("");
 
-  function showError(message) {
+  const showError = useCallback((message) => {
     setErrorBanner(message);
-  }
+  }, []);
 
   function announce(message) {
     if (!message || !accessibility.announceUpdates) {
@@ -1344,7 +1344,7 @@ export default function App() {
     }
   }
 
-  async function handleUpload(files) {
+  async function handleUpload(files, folderId = null) {
     const fileList = Array.from(files || []);
     if (!fileList.length) {
       return;
@@ -1354,7 +1354,7 @@ export default function App() {
 
     for (const file of fileList) {
       try {
-        await uploadDocument(file);
+        await uploadDocument(file, folderId);
         announce(`Started upload for ${file.name}.`);
       } catch (error) {
         if (isUnauthorizedError(error)) {
@@ -1793,7 +1793,13 @@ export default function App() {
       ].join(" ")
     };
   const mobileTabTitle =
-    mobileTab === "sources" ? "Sources" : mobileTab === "studio" ? "Studio" : "Chat";
+    viewMode === "topic-miner"
+      ? "Topic Miner"
+      : mobileTab === "sources"
+        ? "Sources"
+        : mobileTab === "studio"
+          ? "Studio"
+          : "Chat";
   const voiceInputStatus = getVoiceInputAvailability();
 
   function renderWorkspaceSections() {
@@ -2158,6 +2164,10 @@ export default function App() {
             </div>
           </button>
         </section>
+
+        <TopicMinerWorkspace
+          onOpenWorkspace={() => setViewMode("topic-miner")}
+        />
       </div>
     );
   }
@@ -2246,8 +2256,19 @@ export default function App() {
               </div>
             </>
           )}
-          <button className="small-button" type="button" onClick={() => setViewMode(viewMode === "workspace" ? "calendar" : "workspace")}>
-            {viewMode === "workspace" ? "Calendar" : "Workspace"}
+          <button
+            className="small-button"
+            type="button"
+            onClick={() => setViewMode(viewMode === "calendar" ? "workspace" : "calendar")}
+          >
+            {viewMode === "calendar" ? "Workspace" : "Calendar"}
+          </button>
+          <button
+            className="small-button"
+            type="button"
+            onClick={() => setViewMode(viewMode === "topic-miner" ? "workspace" : "topic-miner")}
+          >
+            {viewMode === "topic-miner" ? "Workspace" : "Topic Miner"}
           </button>
           <button className="small-button" type="button" onClick={() => setShowSettings(true)}>
             Settings
@@ -2510,9 +2531,17 @@ export default function App() {
             </>
           )}
         </div>
-      ) : (
+      ) : viewMode === "calendar" ? (
         <div id="primary-content" className="app-frame" style={{ display: 'flex', overflow: 'hidden', padding: 0 }}>
           <Calendar events={calendarEvents} topics={allTopics} accessibility={accessibility} />
+        </div>
+      ) : (
+        <div id="primary-content" className="app-frame workspace-view topic-miner-view">
+          <TopicMinerWorkspace
+            onError={showError}
+            fullScreen
+            onCloseWorkspace={() => setViewMode("workspace")}
+          />
         </div>
       )}
 

@@ -1551,6 +1551,492 @@ body.dark-mode .message.bot {
   background: rgba(22, 215, 165, 0.18);
 }
 
+.topic-miner-card {
+  background:
+    linear-gradient(135deg, rgba(91, 68, 255, 0.14), rgba(22, 215, 165, 0.08)),
+    var(--surface);
+}
+
+.topic-miner-card.active {
+  border-color: rgba(91, 68, 255, 0.35);
+}
+
+.topic-miner-shell {
+  gap: 14px;
+}
+
+.workspace-view.topic-miner-view {
+  display: block;
+  overflow: auto;
+  padding: 0;
+}
+
+.topic-miner-fullscreen {
+  min-height: 100%;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.topic-miner-topbar {
+  align-items: center;
+}
+
+.topic-miner-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.topic-miner-sidebar,
+.topic-miner-preview-panel,
+.topic-miner-navigator-sidebar {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.topic-miner-navigator-sidebar {
+  border-radius: 30px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: flex 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 0 0 360px;
+  min-width: 0;
+}
+
+.topic-miner-navigator-sidebar.collapsed {
+  flex: 0 0 86px;
+}
+
+.topic-miner-sidebar.collapsed {
+  width: 86px;
+}
+
+.topic-miner-sidebar-head,
+.topic-miner-preview-head {
+  flex-shrink: 0;
+  padding: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+
+.topic-miner-back-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.topic-miner-head-actions,
+.topic-miner-folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-papers-actions {
+  justify-content: flex-end;
+  flex: 1 1 220px;
+}
+
+.topic-miner-sidebar-title,
+.topic-miner-preview-title,
+.topic-miner-folder-name,
+.topic-miner-paper-name {
+  color: var(--text);
+}
+
+.topic-miner-sidebar-title,
+.topic-miner-preview-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.topic-miner-folder-create,
+.topic-miner-folder-list,
+.topic-miner-paper-list,
+.topic-miner-sidebar-placeholder {
+  padding: 0 16px 16px;
+}
+
+.topic-miner-collapsed-actions {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.navigator-slider-wrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  width: 200%;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.navigator-slider-wrapper.nav-view-folders {
+  transform: translateX(0);
+}
+
+.navigator-slider-wrapper.nav-view-papers {
+  transform: translateX(-50%);
+}
+
+.navigator-pane {
+  flex: 0 0 50%;
+  width: 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.topic-miner-folder-create {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.topic-miner-folder-create .input {
+  min-height: 38px;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+  border-radius: 12px;
+}
+
+.topic-miner-folder-list,
+.topic-miner-paper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.topic-miner-folder-item,
+.topic-miner-paper-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.topic-miner-folder-item:hover,
+.topic-miner-paper-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border) 44%);
+}
+
+.topic-miner-folder-item {
+  width: 100%;
+  padding: 14px;
+  border-radius: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.topic-miner-folder-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.topic-miner-folder-item.active {
+  border-color: rgba(91, 68, 255, 0.35);
+  background: color-mix(in srgb, var(--surface-strong) 82%, var(--accent-soft) 18%);
+}
+
+.topic-miner-folder-analysis-copy {
+  margin-top: 6px;
+}
+
+.topic-miner-chevron {
+  font-size: 1rem;
+  color: var(--text-soft);
+}
+
+.topic-miner-paper-card {
+  border-radius: 22px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-miner-paper-card.active {
+  border-color: rgba(91, 68, 255, 0.35);
+}
+
+.topic-miner-paper-button {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: 16px;
+}
+
+.topic-miner-paper-thumb {
+  height: 168px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: #d9dde6;
+}
+
+.topic-miner-paper-thumb iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  pointer-events: none;
+  background: white;
+}
+
+.topic-miner-paper-fallback {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.topic-miner-paper-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.topic-miner-paper-name,
+.topic-miner-folder-name {
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.topic-miner-move-select {
+  width: 100%;
+}
+
+.topic-miner-analysis-status-card {
+  margin: 0 16px 16px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-strong) 84%, var(--accent-soft) 16%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-analysis-status-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.topic-miner-analysis-status-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-preview-panel {
+  border-radius: 30px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: flex 0.24s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.24s ease;
+  max-width: 768px;
+  flex: 1;
+}
+
+.topic-miner-preview-panel.collapsed {
+  flex: 0 0 86px;
+  min-width: 86px;
+  max-width: 86px;
+}
+
+.topic-miner-analysis-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.topic-miner-analysis-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.topic-miner-analysis-stat,
+.topic-miner-observation-card,
+.topic-miner-theme-card,
+.topic-miner-subtopic-card,
+.topic-miner-example-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.topic-miner-analysis-stat {
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-miner-analysis-stat strong {
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+}
+
+.topic-miner-observations,
+.topic-miner-theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-miner-observation-list,
+.topic-miner-theme-subtopics,
+.topic-miner-example-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.topic-miner-observation-card,
+.topic-miner-example-card {
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.topic-miner-theme-card {
+  border-radius: 22px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.topic-miner-theme-head,
+.topic-miner-subtopic-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topic-miner-theme-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.03em;
+}
+
+.topic-miner-theme-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topic-miner-subtopic-card {
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topic-miner-analysis-empty {
+  min-height: 220px;
+}
+
+.topic-miner-preview-frame-wrap {
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 14px;
+}
+
+.topic-miner-preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface-strong);
+}
+
+.topic-miner-preview-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.preview-hint {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.topic-miner-rail-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+  flex-shrink: 0;
+}
+
 .insight-group {
   display: flex;
   flex-direction: column;
@@ -1939,6 +2425,47 @@ body.dark-mode .message.bot {
     gap: 10px;
   }
 
+  .topic-miner-fullscreen {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .topic-miner-layout {
+    flex-direction: column;
+  }
+
+  .topic-miner-sidebar.open,
+  .topic-miner-sidebar.collapsed {
+    width: 100%;
+  }
+
+  .topic-miner-preview-panel.collapsed {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .topic-miner-analysis-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topic-miner-theme-head,
+  .topic-miner-subtopic-head,
+  .topic-miner-analysis-status-card,
+  .topic-miner-folder-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topic-miner-folder-button,
+  .topic-miner-head-actions {
+    width: 100%;
+  }
+
+  .topic-miner-papers-actions .small-button,
+  .topic-miner-analysis-status-actions .small-button {
+    flex: 1 1 100%;
+  }
+
   .upload-zone,
   .empty-card,
   .document-item,
@@ -1965,6 +2492,14 @@ body.dark-mode .message.bot {
   .note-card,
   .studio-card {
     padding: 12px;
+    border-radius: 18px;
+  }
+
+  .topic-miner-sidebar,
+  .topic-miner-preview-panel,
+  .topic-miner-folder-item,
+  .topic-miner-paper-card,
+  .topic-miner-preview-frame {
     border-radius: 18px;
   }
 
