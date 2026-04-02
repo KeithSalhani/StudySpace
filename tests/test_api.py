@@ -1,7 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException, Response, UploadFile
@@ -196,7 +196,7 @@ async def test_get_document_file_returns_owned_file(main_module, tmp_path):
 
     response = await main_module.get_document_file("exam.pdf", current_user=user())
 
-    assert response.path == str(document_path)
+    assert str(response.path) == str(document_path)
     assert response.media_type == "application/pdf"
 
 
@@ -216,6 +216,7 @@ async def test_get_metadata_scoped_to_user(main_module):
 @pytest.mark.asyncio
 async def test_update_document_tag_endpoint(main_module):
     main_module.app.state.db.create_user("alice", "hash", "salt")
+    main_module.app.state.db.set_document_metadata("alice", "test.pdf", {"tag": "OldTag"})
     main_module.vector_store.get_document_metadata.return_value = {
         "filename": "test.pdf",
         "owner_username": "alice",
@@ -230,6 +231,7 @@ async def test_update_document_tag_endpoint(main_module):
 
     assert response == {"message": "Document tag updated successfully", "tag": "NewTag"}
     assert "NewTag" in main_module.app.state.db.get_tags("alice")
+    assert main_module.app.state.db.get_all_metadata("alice")["test.pdf"]["tag"] == "NewTag"
     main_module.vector_store.update_document_tag.assert_called_once_with("alice", "test.pdf", "NewTag")
 
 
@@ -314,6 +316,7 @@ async def test_generate_flashcards_returns_payload(main_module):
 @pytest.mark.asyncio
 async def test_upload_document_rejects_invalid_filename(main_module):
     upload = UploadFile(filename="", file=BytesIO(b"content"))
+    upload.close = AsyncMock()
 
     with pytest.raises(HTTPException) as exc_info:
         await main_module.upload_document(upload, current_user=user())
@@ -327,6 +330,7 @@ async def test_upload_document_accepts_folder_id(main_module):
     main_module.app.state.db.create_user("alice", "hash", "salt")
     folder = main_module.app.state.db.create_folder("alice", "Past Papers")
     upload = UploadFile(filename="exam.pdf", file=BytesIO(b"content"))
+    upload.close = AsyncMock()
     main_module.upload_jobs.enqueue = MagicMock(return_value={"job_id": "job-1"})
 
     response = await main_module.upload_document(

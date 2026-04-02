@@ -9,6 +9,10 @@ load_dotenv()
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "studyspace")
+MONGODB_APP_NAME = os.getenv("MONGODB_APP_NAME", "studyspace-api")
+MONGODB_SERVER_SELECTION_TIMEOUT_MS = int(os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", "5000"))
 
 # Directories
 PROJECT_ROOT = Path(__file__).parent

@@ -426,6 +426,15 @@ class JSONDatabase:
             documents[filename] = next_metadata
             self.save()
 
+    def get_document_metadata(self, username: str, filename: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            documents = user.setdefault("documents", {})
+            metadata = documents.get(filename)
+            return dict(metadata) if isinstance(metadata, dict) else None
+
     def set_document_folder(self, username: str, filename: str, folder_id: Optional[str]) -> Dict[str, Any]:
         with self._lock:
             user = self.data["users"].get(username)
