@@ -255,6 +255,91 @@ def test_chat_full_document_plan_reads_exact_files_directly(rag_chat, mock_vecto
     ]
     assert mock_vector_store.search.call_count == 0
     assert mock_client.models.generate_content.call_count == 2
+    assert mock_vector_store.get_full_document_content.call_count == 2
+
+
+def test_chat_full_document_plan_keeps_monotonic_ids_when_earlier_file_is_skipped(
+    rag_chat, mock_vector_store, mock_genai
+):
+    mock_client = mock_genai.Client.return_value
+    mock_client.models.generate_content.side_effect = [
+        make_response(
+            json.dumps(
+                {
+                    "queries": [
+                        {
+                            "text": "Read the first pair",
+                            "goal": "Check the first two papers.",
+                            "search_mode": "full_document",
+                            "module_tag": "Exam Papers",
+                            "target_files": ["17-18.pdf", "18-19.pdf"],
+                        },
+                        {
+                            "text": "Read the second pair",
+                            "goal": "Check the next paper.",
+                            "search_mode": "full_document",
+                            "module_tag": "Exam Papers",
+                            "target_files": ["22-23.pdf"],
+                        },
+                    ]
+                }
+            )
+        ),
+        make_response("Direct full-document answer [F2] [F3]"),
+    ]
+    mock_vector_store.list_documents.return_value = [
+        {"filename": "17-18.pdf", "tag": "Exam Papers"},
+        {"filename": "18-19.pdf", "tag": "Exam Papers"},
+        {"filename": "22-23.pdf", "tag": "Exam Papers"},
+    ]
+    mock_vector_store.get_full_document_content.side_effect = [
+        {"filename": "17-18.pdf", "tag": "Exam Papers", "content": "   ", "source": "processed_markdown"},
+        {"filename": "18-19.pdf", "tag": "Exam Papers", "content": "Paper 18-19 full text", "source": "processed_markdown"},
+        {"filename": "22-23.pdf", "tag": "Exam Papers", "content": "Paper 22-23 full text", "source": "processed_markdown"},
+    ]
+
+    payload = rag_chat.chat("Compare the named papers", owner_username="alice")
+
+    assert payload["trace"]["full_document_fetches"] == [
+        {
+            "source_id": "F2",
+            "filename": "18-19.pdf",
+            "tag": "Exam Papers",
+            "source": "processed_markdown",
+            "reason": "Check the first two papers.",
+            "query_id": "q1",
+            "search_mode": "full_document",
+        },
+        {
+            "source_id": "F3",
+            "filename": "22-23.pdf",
+            "tag": "Exam Papers",
+            "source": "processed_markdown",
+            "reason": "Check the next paper.",
+            "query_id": "q2",
+            "search_mode": "full_document",
+        },
+    ]
+    assert payload["sources"] == [
+        {
+            "source_id": "F2",
+            "doc_id": None,
+            "filename": "18-19.pdf",
+            "chunk_index": None,
+            "distance": None,
+            "tag": "Exam Papers",
+            "source_type": "full_document",
+        },
+        {
+            "source_id": "F3",
+            "doc_id": None,
+            "filename": "22-23.pdf",
+            "chunk_index": None,
+            "distance": None,
+            "tag": "Exam Papers",
+            "source_type": "full_document",
+        },
+    ]
 
 
 def test_chat_empty_response_raises(rag_chat, mock_vector_store, mock_genai):

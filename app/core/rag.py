@@ -436,6 +436,7 @@ User question: {message}
         retrieval_runs: List[Dict[str, Any]] = []
         direct_full_document_sources: List[Dict[str, Any]] = []
         direct_full_document_fetches: List[Dict[str, Any]] = []
+        next_full_document_index = 1
 
         for item in planned_queries:
             module_tag = self._normalize_module_tag(item.get("module_tag"), available_tags)
@@ -448,11 +449,12 @@ User question: {message}
                     filenames=target_files,
                     reason=item["goal"],
                     query_id=item["query_id"],
-                    start_index=len(direct_full_document_sources) + 1,
+                    start_index=next_full_document_index,
                     planned=True,
                 )
                 direct_full_document_sources.extend(fetched_sources)
                 direct_full_document_fetches.extend(fetched_fetches)
+                next_full_document_index += min(len(target_files), self.FULL_DOCUMENT_FETCH_LIMIT)
                 retrieval_runs.append(
                     {
                         "query_id": item["query_id"],
@@ -524,6 +526,7 @@ User question: {message}
                     "distance": None,
                     "tag": document_payload.get("tag"),
                     "source_type": "full_document",
+                    "_content": (document_payload.get("content") or "").strip(),
                 }
             )
             full_document_fetches.append(
@@ -658,7 +661,7 @@ User question: {message}
                 raise ValueError("Empty response from Gemini")
             return {
                 "response": response.text,
-                "full_document_sources": list(direct_full_document_sources),
+                "full_document_sources": self._serialize_full_document_sources(direct_full_document_sources),
                 "full_document_fetches": list(direct_full_document_fetches or []),
             }
 
@@ -687,7 +690,7 @@ User question: {message}
                 raise ValueError("Empty response from Gemini")
             return {
                 "response": response.text,
-                "full_document_sources": full_document_sources,
+                "full_document_sources": self._serialize_full_document_sources(full_document_sources),
                 "full_document_fetches": full_document_fetches,
             }
 
@@ -846,16 +849,19 @@ Answer helpfully, but clearly note that the uploaded documents did not provide d
             filename = source.get("filename")
             if not filename:
                 continue
-            document_payload = self.vector_store.get_full_document_content(owner_username, filename)
-            if not document_payload:
-                continue
+            content = (source.get("_content") or "").strip()
+            if not content:
+                document_payload = self.vector_store.get_full_document_content(owner_username, filename)
+                if not document_payload:
+                    continue
+                content = (document_payload.get("content") or "").strip()
+                if not content:
+                    continue
 
             header_bits = [source["source_id"], filename, "full document"]
             if source.get("tag"):
                 header_bits.append(f"module {source['tag']}")
-            document_parts.append(
-                f"[{' | '.join(header_bits)}]\n{(document_payload.get('content') or '').strip()}"
-            )
+            document_parts.append(f"[{' | '.join(header_bits)}]\n{content}")
 
         full_document_context = "\n\n".join(document_parts)
 
@@ -878,6 +884,20 @@ Full-document context:
 User question:
 {message}
 """
+
+    def _serialize_full_document_sources(self, sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [
+            {
+                "source_id": source.get("source_id"),
+                "doc_id": source.get("doc_id"),
+                "filename": source.get("filename"),
+                "chunk_index": source.get("chunk_index"),
+                "distance": source.get("distance"),
+                "tag": source.get("tag"),
+                "source_type": source.get("source_type"),
+            }
+            for source in sources
+        ]
 
     def _build_evidence_context(self, fused_results: List[Dict[str, Any]]) -> str:
         parts = []
