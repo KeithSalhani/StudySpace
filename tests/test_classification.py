@@ -9,7 +9,7 @@ def classifier():
 
 def test_classify_success(classifier):
     # Setup
-    mock_pipeline = classifier.classifier
+    mock_pipeline = classifier._get_classifier()
     expected_result = {'labels': ['A', 'B'], 'scores': [0.8, 0.2]}
     mock_pipeline.return_value = expected_result
     
@@ -27,7 +27,7 @@ def test_classify_success(classifier):
 def test_classify_truncation(classifier):
     # Setup
     long_text = "x" * 3000
-    mock_pipeline = classifier.classifier
+    mock_pipeline = classifier._get_classifier()
     
     # Execute
     classifier.classify(long_text, ['A'])
@@ -36,3 +36,8 @@ def test_classify_truncation(classifier):
     args, _ = mock_pipeline.call_args
     assert len(args[0]) == 2000
 
+def test_classifier_is_lazy():
+    with patch('app.core.classification.pipeline') as mock_pipeline:
+        classifier = Classifier()
+
+    mock_pipeline.assert_not_called()

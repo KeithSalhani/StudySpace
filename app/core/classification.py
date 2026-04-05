@@ -1,12 +1,23 @@
+import logging
+from typing import Callable, Dict, List, Optional
+
 from transformers import pipeline
-from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 class Classifier:
     def __init__(self):
-        self.classifier = pipeline("zero-shot-classification",
-                      model="facebook/bart-large-mnli",
-                      device=-1
-                      )
+        self._classifier: Optional[Callable] = None
+
+    def _get_classifier(self):
+        if self._classifier is None:
+            logger.info("Initializing zero-shot classifier pipeline")
+            self._classifier = pipeline(
+                "zero-shot-classification",
+                model="facebook/bart-large-mnli",
+                device=-1,
+            )
+        return self._classifier
         
     def classify(self, text: str, candidate_labels: List[str]) -> Dict:
         """
@@ -22,7 +33,8 @@ class Classifier:
         # Truncate text if too long for the model (simple truncation)
         # BART model max length is usually 1024 tokens, taking first 2000 chars as approximation
         text_to_classify = text[:2000]
-        return self.classifier(text_to_classify, candidate_labels)
+        classifier = self._get_classifier()
+        return classifier(text_to_classify, candidate_labels)
 
 # Standalone usage for testing
 if __name__ == "__main__":
