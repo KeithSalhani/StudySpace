@@ -140,6 +140,10 @@ export function getUploadJobs(limit = 50) {
   return request(`/upload-jobs?limit=${limit}`);
 }
 
+export function getUploadConfig() {
+  return request("/upload-config");
+}
+
 export function uploadDocument(file, folderId = null) {
   const formData = new FormData();
   formData.append("file", file);

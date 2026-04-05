@@ -14,6 +14,7 @@ import {
   getMetadata,
   getNotes,
   getTags,
+  getUploadConfig,
   getUploadJobs,
   signIn,
   signOut,
@@ -1108,6 +1109,7 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadJobs, setUploadJobs] = useState([]);
+  const [uploadAccept, setUploadAccept] = useState("");
   const [selectedDocument, setSelectedDocument] = useState("");
   const [flashcardState, setFlashcardState] = useState({
     open: false,
@@ -1310,6 +1312,7 @@ export default function App() {
     void loadTagsAndNotes();
     void loadDocumentsList();
     void loadUploadJobsList();
+    void loadUploadConfig();
     void loadMetadata();
 
     const timerId = window.setInterval(() => {
@@ -1375,6 +1378,19 @@ export default function App() {
         return;
       }
       console.error("Failed to load metadata:", error);
+    }
+  }
+
+  async function loadUploadConfig() {
+    try {
+      const payload = await getUploadConfig();
+      setUploadAccept(typeof payload.accept === "string" ? payload.accept : "");
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      console.error("Failed to load upload config:", error);
     }
   }
 
@@ -1956,7 +1972,7 @@ export default function App() {
               ref={fileInputRef}
               hidden
               type="file"
-              accept=".pdf,.docx,.txt,.md"
+              accept={uploadAccept || undefined}
               multiple
               onChange={async (event) => {
                 await handleUpload(event.currentTarget.files);

@@ -1,10 +1,10 @@
 """
-Document processing module using Markitdown
+Document processing module using Docling.
 """
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import AsrPipelineOptions, PdfPipelineOptions
+from docling.document_converter import AudioFormatOption, DocumentConverter, PdfFormatOption
 from pathlib import Path
 import logging
 from typing import List, Optional
@@ -17,34 +17,114 @@ accelerator_options = AcceleratorOptions(
     num_threads=8,
 )
 
+DOC_PROCESSOR_SUPPORTED_SUFFIXES = tuple(
+    sorted(
+        {
+            # Plain text is handled directly rather than through Docling.
+            ".txt",
+            ".text",
+            # Common Docling document formats.
+            ".pdf",
+            ".docx",
+            ".pptx",
+            ".xlsx",
+            ".md",
+            ".markdown",
+            ".html",
+            ".htm",
+            ".xhtml",
+            ".adoc",
+            ".asciidoc",
+            ".asc",
+            ".csv",
+            ".vtt",
+            ".tex",
+            ".latex",
+            # Common image formats covered by Docling's image input support.
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".bmp",
+            ".gif",
+            ".tif",
+            ".tiff",
+            ".webp",
+            # Audio formats supported by Docling's ASR pipeline.
+            ".mp3",
+            ".wav",
+            ".m4a",
+            ".aac",
+            ".flac",
+            ".ogg",
+            ".oga",
+        }
+    )
+)
+
+DOC_PROCESSOR_SUPPORTED_TYPES_LABEL = ", ".join(ext.lstrip(".") for ext in DOC_PROCESSOR_SUPPORTED_SUFFIXES)
+
 class DocumentProcessor:
     def __init__(self):
         pdf_pipeline_options = PdfPipelineOptions()
         pdf_pipeline_options.accelerator_options = accelerator_options
+        asr_pipeline_options = AsrPipelineOptions()
+        # Force ASR to CPU because the local GTX 1050 Ti is below the CUDA
+        # capability supported by the installed PyTorch build.
+        asr_pipeline_options.accelerator_options.device = AcceleratorDevice.CPU
         self.converter = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(
                     pipeline_options=pdf_pipeline_options,
-                )
+                ),
+                InputFormat.AUDIO: AudioFormatOption(
+                    pipeline_options=asr_pipeline_options,
+                ),
             }
         )
         self.classifier = Classifier()
 
+    @staticmethod
+    def get_supported_suffixes() -> tuple[str, ...]:
+        return DOC_PROCESSOR_SUPPORTED_SUFFIXES
+
+    @staticmethod
+    def get_supported_types_label() -> str:
+        return DOC_PROCESSOR_SUPPORTED_TYPES_LABEL
+
+    @classmethod
+    def supports_file(cls, filename: str) -> bool:
+        suffix = Path(filename).suffix.lower()
+        return suffix in cls.get_supported_suffixes()
+
+    @classmethod
+    def ensure_supported_file(cls, filename: str) -> None:
+        if cls.supports_file(filename):
+            return
+        raise ValueError(
+            "Unsupported file type. Supported types: "
+            f"{cls.get_supported_types_label()}"
+        )
+
     def process_document(self, file_path: str) -> str:
         """
-        Process a document (PDF, DOCX, etc.) and convert to markdown
+        Process a supported document and convert it to markdown-like text.
 
         Args:
             file_path: Path to the document file
 
         Returns:
-            str: Markdown content of the document
+            str: Markdown or plain text content of the document
         """
         try:
             path = Path(file_path)
 
             if not path.exists():
                 raise FileNotFoundError(f"File not found: {file_path}")
+
+            self.ensure_supported_file(path.name)
+
+            if path.suffix.lower() in {".txt", ".text"}:
+                return self.process_text_file(file_path)
 
             # Convert document to markdown
             result = self.converter.convert(file_path)

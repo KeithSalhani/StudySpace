@@ -1000,14 +1000,18 @@ async def upload_document(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Upload and enqueue a document for background processing"""
-    filename = os.path.basename(file.filename or "").strip()
-    if not filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
-
-    storage_name = f"{uuid.uuid4().hex}_{filename}"
-    file_path = _user_upload_dir(current_user.username) / storage_name
-
+    file_path: Optional[Path] = None
     try:
+        filename = os.path.basename(file.filename or "").strip()
+        if not filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        try:
+            doc_processor.ensure_supported_file(filename)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        storage_name = f"{uuid.uuid4().hex}_{filename}"
+        file_path = _user_upload_dir(current_user.username) / storage_name
         folder = None
         normalized_folder_id = folder_id.strip() if isinstance(folder_id, str) else None
         if normalized_folder_id:
@@ -1026,11 +1030,24 @@ async def upload_document(
             "job": job,
         }
     except Exception as exc:
-        if file_path.exists():
+        if file_path and file_path.exists():
             file_path.unlink(missing_ok=True)
+        if isinstance(exc, HTTPException):
+            raise exc
         raise HTTPException(status_code=500, detail=f"Error uploading document: {str(exc)}")
     finally:
         await file.close()
+
+
+@app.get("/upload-config")
+async def get_upload_config(current_user: AuthenticatedUser = Depends(get_current_user)):
+    del current_user
+    supported_suffixes = doc_processor.get_supported_suffixes()
+    return {
+        "accept": ",".join(supported_suffixes),
+        "supported_extensions": list(supported_suffixes),
+        "supported_types_label": doc_processor.get_supported_types_label(),
+    }
 
 
 @app.get("/upload-jobs")

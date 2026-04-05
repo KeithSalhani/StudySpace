@@ -5,7 +5,7 @@ pymongo
 dnspython
 sentence-transformers
 numpy
-markitdown
+docling[asr]
 google-genai
 python-multipart
 jinja2
