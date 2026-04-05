@@ -56,8 +56,6 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
-    ports:
-      - "8000:8000"
     volumes:
       - chroma_data:/app/app/chroma_db
       - user_data:/app/app/users
