@@ -323,6 +323,7 @@ async def test_upload_document_rejects_invalid_filename(main_module):
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Invalid filename"
+    upload.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -336,6 +337,21 @@ async def test_upload_document_rejects_unsupported_file_type(main_module):
 
     assert exc_info.value.status_code == 400
     assert "Unsupported file type" in exc_info.value.detail
+    upload.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_upload_config_returns_supported_extensions(main_module):
+    main_module.doc_processor.get_supported_suffixes.return_value = (".pdf", ".mp3")
+    main_module.doc_processor.get_supported_types_label.return_value = "pdf, mp3"
+
+    response = await main_module.get_upload_config(current_user=user())
+
+    assert response == {
+        "accept": ".pdf,.mp3",
+        "supported_extensions": [".pdf", ".mp3"],
+        "supported_types_label": "pdf, mp3",
+    }
 
 
 @pytest.mark.asyncio

@@ -61,7 +61,6 @@ DOC_PROCESSOR_SUPPORTED_SUFFIXES = tuple(
     )
 )
 
-DOC_PROCESSOR_ACCEPT_ATTRIBUTE = ",".join(DOC_PROCESSOR_SUPPORTED_SUFFIXES)
 DOC_PROCESSOR_SUPPORTED_TYPES_LABEL = ", ".join(ext.lstrip(".") for ext in DOC_PROCESSOR_SUPPORTED_SUFFIXES)
 
 class DocumentProcessor:
@@ -87,10 +86,6 @@ class DocumentProcessor:
     @staticmethod
     def get_supported_suffixes() -> tuple[str, ...]:
         return DOC_PROCESSOR_SUPPORTED_SUFFIXES
-
-    @staticmethod
-    def get_accept_attribute() -> str:
-        return DOC_PROCESSOR_ACCEPT_ATTRIBUTE
 
     @staticmethod
     def get_supported_types_label() -> str:
