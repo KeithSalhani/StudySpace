@@ -68,10 +68,21 @@ def test_upload_job_manager_processes_document_successfully(main_module, tmp_pat
     assert completed_job["predicted_tag"] == "Security"
     assert completed_job["doc_id"].startswith("upload.pdf_")
     database.add_tag.assert_called_once_with("alice", "Security")
+    from unittest.mock import ANY
     database.set_document_metadata.assert_called_once_with(
         "alice",
         "upload.pdf",
-        {"assessments": [], "deadlines": [], "contacts": []},
+        {
+            "assessments": [],
+            "deadlines": [],
+            "contacts": [],
+            "filename": "upload.pdf",
+            "path": ANY,
+            "processed_path": ANY,
+            "folder_id": None,
+            "folder_name": None,
+            "tag": "Security",
+        },
     )
     store.add_document.assert_called_once()
     assert list(processed_dir.glob("*.md"))
