@@ -1,102 +1,144 @@
 # Study Space
 
-Study Space is a FastAPI + React study workspace for user-scoped document chat, revision tools, and exam-paper analysis. Users can upload their own material, organize it into folders, generate quizzes and flashcards, chat against indexed documents with a transparent retrieval trace, and analyze folders of exam papers in the Topic Miner workspace.
+<p align="center">
+  <img src="assets/studyspace_banner.png" alt="Study Space banner" width="100%" />
+</p>
 
-## Features
+<p align="center">
+  <a href="https://www.python.org/"><img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white"></a>
+  <a href="https://nodejs.org/"><img alt="Node.js 20" src="https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white"></a>
+  <a href="https://fastapi.tiangolo.com/"><img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white"></a>
+  <a href="https://react.dev/"><img alt="React 18" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black"></a>
+  <a href="https://vitejs.dev/"><img alt="Vite 5" src="https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white"></a>
+  <a href="https://www.mongodb.com/"><img alt="MongoDB 7" src="https://img.shields.io/badge/MongoDB-7-47A248?logo=mongodb&logoColor=white"></a>
+  <a href="https://www.trychroma.com/"><img alt="ChromaDB" src="https://img.shields.io/badge/ChromaDB-Vector%20Store-EF4444"></a>
+  <a href="https://ai.google.dev/"><img alt="Google Gemini" src="https://img.shields.io/badge/Google%20Gemini-LLM-4285F4?logo=google&logoColor=white"></a>
+  <a href="https://www.docker.com/"><img alt="Docker Compose" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://pytest.org/"><img alt="pytest" src="https://img.shields.io/badge/pytest-Tested-0A9EDC?logo=pytest&logoColor=white"></a>
+</p>
 
-- Upload PDF, DOCX, TXT, and Markdown study documents
-- User-scoped RAG chat over uploaded material
-- Transparent chat trace showing generated queries, retrieval runs, and fused evidence
-- Automatic document tagging with editable tags
-- Folder organization for study documents
-- Quiz and flashcard generation from selected documents
-- Personal notes and tags
-- Background upload job tracking
-- Calendar/workspace views for extracted academic events
-- Topic Miner workspace for exam-paper analysis across multiple PDFs
-- Inline owned-file viewing for study documents and exam papers
-- Accessibility settings including voice input, higher contrast, larger text, reduced motion, and stronger focus states
+Study Space is a personal academic workspace for turning your own material into searchable, interactive study sessions. Upload documents, organize them into folders, chat against indexed content with a transparent retrieval trace, generate quizzes and flashcards, and analyze collections of exam papers with Topic Miner.
+
+## Overview
+
+Study Space combines a FastAPI backend, a React frontend, MongoDB for structured state, and ChromaDB for semantic retrieval. The result is a user-scoped workspace where uploaded documents stay tied to the authenticated user, AI responses cite their evidence, and revision tools sit next to the source material instead of in a separate app.
+
+### What it does well
+
+- **Upload and organize** PDFs, DOCX, PPTX, XLSX, Markdown, HTML, images, audio, and more
+- **Chat with transparent RAG** using visible queries, retrieval runs, fused evidence, and cited sources
+- **Generate revision tools** like quizzes and flashcards from selected study material
+- **Mine exam folders** for recurring topics, patterns, and example questions
+- **Track academic context** with extracted metadata, tags, notes, and calendar-friendly event views
+- **Stay accessible** with voice input, high contrast mode, larger text, reduced motion, and stronger focus states
+
+## Workspace Preview
+
+![Study Space workspace preview](assets/preview.png)
+
+## Agentic RAG, Without the Black Box
+
+Study Space uses a **retrieval-planned RAG pipeline** rather than a single vector search or a fully autonomous agent loop.
+
+1. The user sends a question to `POST /chat`.
+2. The backend builds a compact catalog of the user's visible files and tags.
+3. Gemini (`gemini-3.1-flash-lite-preview`) plans up to three retrieval steps.
+4. Retrieval runs execute in ChromaDB using broad, focused, or full-document strategies.
+5. Results are fused with reciprocal-rank fusion and deduplicated.
+6. Gemini answers from the fused evidence set and returns a `trace` payload with sources.
+7. The frontend renders the reasoning trail inline so the user can inspect how the answer was built.
+
+That gives the app an **agentic-style planning step** while keeping execution constrained, inspectable, and grounded in the user's own material.
+
+## Feature Highlights
+
+### Document Workspace
+
+- Drag-and-drop uploads with background processing and job progress
+- Folder organization and editable tags
+- Inline access to owned study documents and exam papers
+- Personal notes linked to the workspace
+
+### Transparent Study Chat
+
+- Multi-query retrieval over user-scoped content
+- Visible retrieval trace with generated queries and fused results
+- Source-aware answers backed by chunk evidence and optional full-document fallback
+- Search scope that stays limited to the authenticated user's data
+
+### Revision Tools
+
+- Quiz generation from selected documents
+- Flashcard generation for quick recall practice
+- Metadata extraction for deadlines, events, and academic context
+
+### Topic Miner
+
+- Separate workflow for exam-paper folders
+- Batch analysis across multiple PDFs
+- Theme extraction, recurring topics, and synthesized study guidance
+
+### Accessibility
+
+- Voice input support
+- Higher contrast mode
+- Larger text
+- Reduced motion
+- Stronger focus states and better keyboard support
 
 ## Architecture
 
-- Frontend: React + Vite, built into backend-served static assets
-- Backend: FastAPI in [`app/main.py`](app/main.py)
-- Structured app data: MongoDB through [`app/db/mongo.py`](app/db/mongo.py)
-- Repository contract: [`app/db/repository.py`](app/db/repository.py)
-- Vector store: ChromaDB in [`app/db/vector_store.py`](app/db/vector_store.py)
-- Embeddings: `all-MiniLM-L6-v2`
-- LLM features: Google Gemini via `google-genai`
-- Ingestion and metadata extraction: [`app/core/ingestion.py`](app/core/ingestion.py), [`app/core/metadata_extractor.py`](app/core/metadata_extractor.py)
-- Exam topic mining: [`app/core/topic_miner.py`](app/core/topic_miner.py)
+| Layer | Implementation |
+| --- | --- |
+| **Frontend** | React 18 + Vite, built into backend-served static assets |
+| **Backend** | FastAPI application in `app/main.py` |
+| **Structured data** | MongoDB via `app/db/mongo.py` |
+| **Vector retrieval** | ChromaDB via `app/db/vector_store.py` |
+| **Embeddings** | `all-MiniLM-L6-v2` via `sentence-transformers` |
+| **Primary LLM** | Google Gemini via `google-genai` |
+| **Document ingestion** | `app/core/ingestion.py` with Docling-based processing |
+| **Topic analysis** | `app/core/topic_miner.py` |
 
-## Data Model
+### Model stack
 
-MongoDB stores the structured runtime data:
+- **Gemini `gemini-3.1-flash-lite-preview`** powers chat, quiz generation, flashcards, metadata extraction, and Topic Miner flows.
+- **`facebook/bart-large-mnli`** is used for document classification.
+- **`all-MiniLM-L6-v2`** produces embeddings for semantic retrieval in ChromaDB.
 
-- users
-- sessions
-- tags
-- notes
-- folders
-- documents
-- exam folder analyses
-- exam documents
+### User isolation
 
-ChromaDB stores chunked document embeddings and retrieval metadata.
+- MongoDB records are scoped by authenticated user identity.
+- Study documents live under `app/users/<username>/uploads/`.
+- Processed markdown lives under `app/users/<username>/processed/`.
+- Exam papers live under `app/users/<username>/exam_papers/`.
+- ChromaDB is shared physically, but every indexed chunk stores `owner_username`.
 
-## Authentication And Isolation
-
-- Users sign up and sign in with username + password.
-- Passwords are stored as PBKDF2 hashes with per-user salts in [`app/auth.py`](app/auth.py).
-- Successful auth issues an `HttpOnly` cookie named `studyspace_session`.
-- Session settings come from [`app/config.py`](app/config.py) via `SESSION_TTL_DAYS` and `SESSION_COOKIE_SECURE`.
-
-User data is isolated as follows:
-
-- MongoDB records are scoped by user identity.
-- Study documents are stored under `app/users/<username>/uploads/`.
-- Processed Markdown is stored under `app/users/<username>/processed/`.
-- Exam papers are stored under `app/users/<username>/exam_papers/`.
-- ChromaDB is physically shared, but every indexed chunk stores `owner_username`.
-- Search, metadata lookup, folder assignment, tag updates, file fetches, and deletes are scoped by authenticated user.
-
-## Storage Layout
-
-```text
-app/chroma_db/                      Shared Chroma persistence
-app/static/dist/                    Built frontend assets
-app/users/<username>/uploads/       Uploaded study documents
-app/users/<username>/processed/     Processed markdown for study documents
-app/users/<username>/exam_papers/   Uploaded exam papers
-MongoDB                             Structured runtime data
-```
-
-Legacy `db.json` is not used at runtime anymore. It is only relevant if you need to import old data into MongoDB.
-
-## Setup
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.12 recommended
-- Node.js
-- A valid `GEMINI_API_KEY`
-- A reachable MongoDB instance
+| Requirement | Notes |
+| --- | --- |
+| **Python 3.12** | Matches the runtime image in `Dockerfile` |
+| **Node.js 20+** | Used for the Vite frontend build |
+| **MongoDB** | Local instance or remote connection string |
+| **`GEMINI_API_KEY`** | Required for chat and generation features |
+| **FFmpeg** | Needed for local audio-file processing; already included in Docker |
 
-### Install
+### Local setup
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
 cd frontend
 npm install
 npm run build
 cd ..
 ```
 
-### Configure
-
-Set required environment variables in your shell or `.env`:
+Set the required environment variables in your shell or in an untracked local `.env` file:
 
 ```bash
 export GEMINI_API_KEY="your_key_here"
@@ -113,80 +155,146 @@ export MONGODB_APP_NAME=studyspace-api
 export MONGODB_SERVER_SELECTION_TIMEOUT_MS=5000
 ```
 
-### Run
+Run the app:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`, create an account, and use the workspace.
+Then open `http://127.0.0.1:8000`, create an account, and start uploading study material.
 
 ## Docker
 
-The repository includes a production-style Docker setup for local use with Docker Compose.
+The repository includes a multi-stage Docker build and a Docker Compose stack for local deployment.
 
-### Prerequisites
-
-- Docker Engine with Compose support
-- A valid `GEMINI_API_KEY`
-
-### Configure
-
-Create a local env file from the template:
+### Start with Compose
 
 ```bash
 cp .env.docker.example .env
 ```
 
-Set `GEMINI_API_KEY` in `.env` before starting the stack.
-
-### Start The Stack
+Set `GEMINI_API_KEY` in `.env`, then run:
 
 ```bash
 docker compose up --build
 ```
 
-This starts:
+That starts:
 
 - `app` on `http://127.0.0.1:8000`
 - `mongo` as the internal database service
 
-Persistent data is stored in named Docker volumes for:
+Persistent data is stored in named volumes for:
 
 - MongoDB data
-- Chroma embeddings at `app/chroma_db`
-- user uploads and processed files under `app/users`
+- Chroma embeddings
+- User uploads and processed files
 
-### Optional GPU Profile
-
-The default stack is CPU-only. There is also an optional GPU service profile:
+### Optional GPU profile
 
 ```bash
 docker compose --profile gpu up --build app-gpu mongo
 ```
 
-Notes:
+Use this only if your host has NVIDIA Container Toolkit configured. The current application still defaults major workloads to CPU, so the GPU profile is best treated as an optional environment path rather than a required deployment mode.
 
-- This requires NVIDIA Container Toolkit and a compatible host setup.
-- The current application still defaults major workloads to CPU in code, so the GPU profile is mainly an environment path for future GPU-enabled changes.
-
-### Stop Or Reset
-
-Stop the stack without deleting data:
+### Stop or reset
 
 ```bash
 docker compose down
-```
-
-Stop the stack and remove all persisted Docker volumes:
-
-```bash
 docker compose down -v
 ```
 
-## Migrating Legacy `db.json`
+## Testing
 
-If you have legacy JSON-backed data, import it into MongoDB with:
+Run the main test suite:
+
+```bash
+./.venv/bin/python -m pytest tests
+```
+
+Run coverage:
+
+```bash
+./.venv/bin/python -m coverage run --source=app -m pytest tests
+./.venv/bin/python -m coverage report -m
+```
+
+MongoDB integration tests require `MONGODB_TEST_URI`:
+
+```bash
+./.venv/bin/python -m pytest tests/test_mongo_db.py
+```
+
+For a fuller breakdown of the test suite, see [README_TESTS.md](README_TESTS.md).
+
+## Topic Miner Workflow
+
+Topic Miner is a separate exam-analysis workspace. Its flow is:
+
+1. Create an exam folder.
+2. Upload exam PDFs into that folder.
+3. Run folder-level analysis.
+4. Extract topic structure from each paper.
+5. Synthesize recurring themes and example questions across the folder.
+6. Reopen saved analyses later; they are marked stale when folder contents change.
+
+## Project Layout
+
+```text
+app/
+  main.py                 FastAPI entry point and API routes
+  auth.py                 Session auth and password hashing
+  core/
+    ingestion.py          Document processing and extraction
+    rag.py                Retrieval-planned RAG orchestration
+    topic_miner.py        Exam-paper analysis
+  db/
+    mongo.py              MongoDB integration
+    vector_store.py       ChromaDB indexing and search
+frontend/
+  src/                    React application
+assets/
+  studyspace_banner.png   README hero banner
+report/
+  studyspace.png          Workspace preview and supporting diagrams
+tests/                    Backend test suite
+```
+
+## API Overview
+
+### Auth
+
+- `POST /auth/signup`
+- `POST /auth/signin`
+- `POST /auth/logout`
+- `GET /auth/me`
+
+### Study workspace
+
+- `POST /upload`
+- `GET /upload-jobs`
+- `POST /chat`
+- `GET /documents`
+- `GET /folders`
+- `GET /tags`
+- `GET /notes`
+- `POST /quiz/generate`
+- `POST /flashcards/generate`
+- `GET /metadata`
+
+### Topic Miner
+
+- `GET /exam-folders`
+- `POST /exam-folders`
+- `POST /exam-folders/{folder_id}/analyze`
+- `GET /exam-folders/{folder_id}/analysis`
+- `GET /exam-papers`
+- `POST /exam-papers/upload`
+
+## Legacy Migration
+
+Legacy `db.json` is not used at runtime, but you can still import old data into MongoDB:
 
 ```bash
 python scripts/migrate_json_to_mongo.py \
@@ -204,91 +312,3 @@ python scripts/migrate_json_to_mongo.py \
   --db-name "$MONGODB_DB_NAME" \
   --dry-run
 ```
-
-The importer upserts users, sessions, tags, notes, folders, document metadata, exam analyses, and exam documents. When rerun for the same usernames, it preserves any existing Mongo user ID for that username and reuses it for related imported records.
-
-## Topic Miner
-
-Topic Miner is the exam-paper analysis workspace. It does not reuse the normal study-document upload flow.
-
-Current flow:
-
-1. Create dedicated exam folders.
-2. Upload exam PDFs into those folders.
-3. Run folder-level analysis.
-4. Gemini extracts topic structure from each paper.
-5. Folder-level recurring themes and example questions are synthesized and saved.
-6. Saved analyses are reopened later and marked stale when folder contents change.
-
-## Chat Flow
-
-The chat pipeline in [`app/core/rag.py`](app/core/rag.py) is a retrieval-planned RAG flow rather than a single search:
-
-1. The user sends a message to `POST /chat`.
-2. The backend builds a compact catalog from the user’s visible documents.
-3. Gemini produces a small retrieval plan.
-4. Retrieval runs execute against Chroma by step.
-5. Chunks are fused and deduplicated.
-6. Gemini answers from the fused evidence set.
-7. The API returns `response`, `sources`, and `trace`.
-8. The frontend renders the trace inline.
-
-## API Surface
-
-### Auth
-
-- `POST /auth/signup`
-- `POST /auth/signin`
-- `POST /auth/logout`
-- `GET /auth/me`
-
-### Study Workspace
-
-- `POST /upload`
-- `GET /upload-jobs`
-- `GET /upload-jobs/{job_id}`
-- `POST /chat`
-- `GET /documents`
-- `GET /documents/{filename}/file`
-- `DELETE /documents/{filename}`
-- `PUT /documents/{filename}/tag`
-- `PUT /documents/{filename}/folder`
-- `GET /folders`
-- `POST /folders`
-- `GET /tags`
-- `POST /tags`
-- `DELETE /tags/{tag_name}`
-- `GET /notes`
-- `POST /notes`
-- `DELETE /notes/{note_id}`
-- `POST /quiz/generate`
-- `POST /flashcards/generate`
-- `GET /metadata`
-
-### Topic Miner / Exam Papers
-
-- `GET /exam-folders`
-- `POST /exam-folders`
-- `POST /exam-folders/{folder_id}/analyze`
-- `GET /exam-folders/{folder_id}/analysis`
-- `GET /exam-papers`
-- `POST /exam-papers/upload`
-- `PUT /exam-papers/{document_id}/folder`
-- `GET /exam-papers/{document_id}/file`
-
-## Verification
-
-Useful commands:
-
-```bash
-./.venv/bin/python -m pytest tests/test_auth.py tests/test_api.py
-./.venv/bin/python -m pytest tests/test_mongo_db.py
-./.venv/bin/python -m coverage run --source=app -m pytest tests
-cd frontend && npm run build
-docker compose config
-```
-
-Notes:
-
-- `tests/test_mongo_db.py` requires `MONGODB_TEST_URI` and skips otherwise.
-- ChromaDB remains the vector store in the current implementation; MongoDB replaces the old JSON-backed structured store only.

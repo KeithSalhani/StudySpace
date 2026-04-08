@@ -59,7 +59,13 @@ services:
     volumes:
       - chroma_data:/app/app/chroma_db
       - user_data:/app/app/users
-    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   mongo_data:
