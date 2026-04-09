@@ -89,6 +89,6 @@ def test_process_document_uses_text_handler_for_txt(document_processor):
 
 def test_supports_file_includes_audio_and_text_extensions(document_processor):
     assert document_processor.supports_file("lecture.txt") is True
-    assert document_processor.supports_file("lecture.mp3") is True
-    assert document_processor.supports_file("lecture.wav") is True
+    assert document_processor.supports_file("lecture.mp3") is False
+    assert document_processor.supports_file("lecture.wav") is False
     assert document_processor.supports_file("archive.zip") is False

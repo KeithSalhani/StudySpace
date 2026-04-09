@@ -20,6 +20,7 @@ services:
   app:
     build:
       context: .
+      target: runtime-cpu
     restart: unless-stopped
     depends_on:
       mongo:
@@ -32,6 +33,7 @@ services:
       MONGODB_SERVER_SELECTION_TIMEOUT_MS: ${MONGODB_SERVER_SELECTION_TIMEOUT_MS:-5000}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      ENABLE_DOCLING_ASR: ${ENABLE_DOCLING_ASR:-false}
     ports:
       - "8000:8000"
     volumes:
@@ -42,6 +44,7 @@ services:
     profiles: ["gpu"]
     build:
       context: .
+      target: runtime-gpu
     restart: unless-stopped
     depends_on:
       mongo:
@@ -54,6 +57,7 @@ services:
       MONGODB_SERVER_SELECTION_TIMEOUT_MS: ${MONGODB_SERVER_SELECTION_TIMEOUT_MS:-5000}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      ENABLE_DOCLING_ASR: ${ENABLE_DOCLING_ASR:-true}
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
     volumes:

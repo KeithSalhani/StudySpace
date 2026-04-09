@@ -1,16 +1,2 @@
-fastapi
-uvicorn
-chromadb
-pymongo
-dnspython
-sentence-transformers
-numpy
-docling[asr]
-google-genai
-python-multipart
-jinja2
-aiofiles
-python-dotenv
-pytest
-httpx
-pytest-asyncio
+-r requirements/cpu.txt
+-r requirements/base.txt

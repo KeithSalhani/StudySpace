@@ -46,3 +46,4 @@ DEFAULT_SEARCH_RESULTS = 3
 SESSION_COOKIE_NAME = "studyspace_session"
 SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+ENABLE_DOCLING_ASR = os.getenv("ENABLE_DOCLING_ASR", "false").lower() == "true"
