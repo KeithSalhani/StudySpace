@@ -13,11 +13,6 @@ export default function AuthScreen({
 
   return (
     <div className="auth-shell">
-      <div className="app-noise" />
-      <div className="orb orb-one" />
-      <div className="orb orb-two" />
-      <div className="orb orb-three" />
-      
       <div className="auth-card-container">
         <section className="auth-panel glass-panel">
           <div className="auth-hero-art">
@@ -28,14 +23,14 @@ export default function AuthScreen({
                   </svg>
                </div>
                <h2>Study Space</h2>
-               <p>Your AI-powered environment for active learning, deep focus, and better retention.</p>
+               <p>Your centralized environment for deep focus and structured active recall.</p>
              </div>
           </div>
           <div className="auth-form-container">
-            <div className="auth-kicker">Private workspace</div>
+            <div className="auth-kicker">Workspace Access</div>
             <h1>{isSignUp ? "Create account" : "Welcome back"}</h1>
             <p className="auth-copy">
-              Log in to access your notes, quizzes, and chat context.
+              Log in to access your notes, quizzes, and materials.
             </p>
             <form
               className="auth-form"
