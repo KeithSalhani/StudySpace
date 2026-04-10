@@ -158,6 +158,11 @@ class JSONDatabase:
     def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
         return self.get_user(username)
 
+    def get_raw_user(self, username: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            return dict(user) if isinstance(user, dict) else None
+
     @staticmethod
     def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -199,6 +204,14 @@ class JSONDatabase:
                     self.save()
                     return True
             return False
+
+    def delete_user(self, username: str) -> bool:
+        with self._lock:
+            if username not in self.data["users"]:
+                return False
+            del self.data["users"][username]
+            self.save()
+            return True
 
     def get_tags(self, username: str) -> List[str]:
         with self._lock:

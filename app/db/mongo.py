@@ -178,6 +178,64 @@ class MongoDatabase:
     def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
         return self.get_user(username)
 
+    def get_raw_user(self, username: str) -> Optional[Dict[str, Any]]:
+        user = self._get_user_record(username)
+        if not user:
+            return None
+
+        user_id = user["id"]
+        study_folders = self.folders.find({"user_id": user_id, "kind": "study"}, {"_id": 0}).sort("name_key", ASCENDING)
+        exam_folders = self.folders.find({"user_id": user_id, "kind": "exam"}, {"_id": 0}).sort("name_key", ASCENDING)
+        notes = self.notes.find({"user_id": user_id}, {"_id": 0}).sort("created_at", ASCENDING)
+        tags = self.tags.find({"user_id": user_id}, {"_id": 0, "tag": 1}).sort("tag", ASCENDING)
+        sessions = self.sessions.find({"user_id": user_id}, {"_id": 0}).sort("created_at", ASCENDING)
+        analyses = self.exam_folder_analyses.find({"user_id": user_id}, {"_id": 0})
+        exam_documents = self.exam_documents.find({"user_id": user_id}, {"_id": 0}).sort(
+            [("folder_name", ASCENDING), ("filename", ASCENDING)]
+        )
+        documents = self.documents.find({"user_id": user_id}, {"_id": 0, "filename": 1, "metadata": 1})
+
+        return {
+            "id": user.get("id"),
+            "username": user.get("username"),
+            "password_hash": user.get("password_hash", ""),
+            "password_salt": user.get("password_salt", ""),
+            "created_at": self._iso(user.get("created_at")),
+            "tags": [item.get("tag") for item in tags if item.get("tag")],
+            "notes": [self._serialize_note(note) for note in notes],
+            "folders": [self._serialize_folder(folder) for folder in study_folders],
+            "exam_folders": [self._serialize_folder(folder) for folder in exam_folders],
+            "exam_folder_analyses": {
+                analysis["folder_id"]: {
+                    **analysis,
+                    "created_at": self._iso(analysis.get("created_at")),
+                    "updated_at": self._iso(analysis.get("updated_at")),
+                    "completed_at": self._iso(analysis.get("completed_at")),
+                }
+                for analysis in analyses
+                if analysis.get("folder_id")
+            },
+            "exam_documents": {
+                document["id"]: self._serialize_exam_document(document)
+                for document in exam_documents
+                if document.get("id")
+            },
+            "documents": {
+                record["filename"]: dict(record.get("metadata", {}))
+                for record in documents
+                if record.get("filename")
+            },
+            "sessions": [
+                {
+                    "id": session.get("id"),
+                    "hash": session.get("hash"),
+                    "created_at": self._iso(session.get("created_at")),
+                    "expires_at": self._iso(session.get("expires_at")),
+                }
+                for session in sessions
+            ],
+        }
+
     def create_session(self, username: str, session_id: str, session_hash: str, expires_at: str) -> Dict[str, Any]:
         user = self._require_user_record(username)
         session = {
@@ -210,6 +268,22 @@ class MongoDatabase:
 
     def delete_session(self, session_id: str) -> bool:
         result = self.sessions.delete_one({"id": session_id})
+        return result.deleted_count > 0
+
+    def delete_user(self, username: str) -> bool:
+        user = self._get_user_record(username)
+        if not user:
+            return False
+
+        user_id = user["id"]
+        self.sessions.delete_many({"user_id": user_id})
+        self.tags.delete_many({"user_id": user_id})
+        self.notes.delete_many({"user_id": user_id})
+        self.folders.delete_many({"user_id": user_id})
+        self.documents.delete_many({"user_id": user_id})
+        self.exam_folder_analyses.delete_many({"user_id": user_id})
+        self.exam_documents.delete_many({"user_id": user_id})
+        result = self.users.delete_one({"id": user_id})
         return result.deleted_count > 0
 
     def get_tags(self, username: str) -> List[str]:

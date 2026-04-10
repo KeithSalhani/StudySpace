@@ -16,6 +16,9 @@ class DatabaseRepository(Protocol):
     def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def get_raw_user(self, username: str) -> Optional[Dict[str, Any]]:
+        ...
+
     def create_session(self, username: str, session_id: str, session_hash: str, expires_at: str) -> Dict[str, Any]:
         ...
 
@@ -23,6 +26,9 @@ class DatabaseRepository(Protocol):
         ...
 
     def delete_session(self, session_id: str) -> bool:
+        ...
+
+    def delete_user(self, username: str) -> bool:
         ...
 
     def get_tags(self, username: str) -> List[str]:

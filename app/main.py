@@ -5,11 +5,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Dict, List, Optional
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -857,6 +860,11 @@ class FlashcardRequest(BaseModel):
     num_cards: int = 10
 
 
+class DeleteAccountRequest(BaseModel):
+    username: str
+    password: str
+
+
 def _save_upload_file(source_file, destination: Path) -> None:
     with open(destination, "wb") as buffer:
         shutil.copyfileobj(source_file, buffer)
@@ -911,6 +919,114 @@ def _ensure_selected_files_owned(
             raise HTTPException(status_code=404, detail=f"Document not found: {filename}")
         owned_files.append(filename)
     return owned_files
+
+
+def _scrub_user_export_payload(raw_user: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(raw_user, dict):
+        return {}
+
+    payload = dict(raw_user)
+    payload.pop("password_hash", None)
+    payload.pop("password_salt", None)
+
+    sessions = []
+    for session in payload.get("sessions", []):
+        if not isinstance(session, dict):
+            continue
+        sessions.append(
+            {
+                "id": session.get("id"),
+                "created_at": session.get("created_at"),
+                "expires_at": session.get("expires_at"),
+            }
+        )
+    payload["sessions"] = sessions
+    return payload
+
+
+def _write_json_to_zip(archive: ZipFile, archive_path: str, payload: Any) -> None:
+    archive.writestr(
+        archive_path,
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True),
+    )
+
+
+def _add_directory_to_zip(archive: ZipFile, root_path: Path, archive_root: str) -> None:
+    if not root_path.exists() or not root_path.is_dir():
+        return
+
+    for path in sorted(root_path.rglob("*")):
+        if path.is_file():
+            relative_path = path.relative_to(root_path).as_posix()
+            archive.write(path, arcname=f"{archive_root}/{relative_path}")
+
+
+def _build_account_export(username: str) -> bytes:
+    raw_user = _database().get_raw_user(username)
+    if not raw_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    export_buffer = BytesIO()
+    export_time = datetime.now(timezone.utc)
+    scrubbed_user = _scrub_user_export_payload(raw_user)
+    user_root = USERS_DIR / username
+
+    with ZipFile(export_buffer, "w", compression=ZIP_DEFLATED) as archive:
+        _write_json_to_zip(
+            archive,
+            "manifest.json",
+            {
+                "app": "Study Space",
+                "exported_at": export_time.isoformat(),
+                "username": username,
+                "version": get_frontend_asset_version(),
+            },
+        )
+        _write_json_to_zip(
+            archive,
+            "account/profile.json",
+            {
+                "id": scrubbed_user.get("id"),
+                "username": scrubbed_user.get("username"),
+                "created_at": scrubbed_user.get("created_at"),
+            },
+        )
+        _write_json_to_zip(archive, "account/sessions.json", scrubbed_user.get("sessions", []))
+        _write_json_to_zip(archive, "workspace/tags.json", scrubbed_user.get("tags", []))
+        _write_json_to_zip(archive, "workspace/notes.json", scrubbed_user.get("notes", []))
+        _write_json_to_zip(archive, "workspace/folders.json", scrubbed_user.get("folders", []))
+        _write_json_to_zip(archive, "workspace/exam_folders.json", scrubbed_user.get("exam_folders", []))
+        _write_json_to_zip(
+            archive,
+            "workspace/exam_folder_analyses.json",
+            scrubbed_user.get("exam_folder_analyses", {}),
+        )
+        _write_json_to_zip(archive, "workspace/document_metadata.json", scrubbed_user.get("documents", {}))
+        _write_json_to_zip(archive, "workspace/exam_documents.json", scrubbed_user.get("exam_documents", {}))
+        _write_json_to_zip(
+            archive,
+            "workspace/vector_documents.json",
+            vector_store.list_all_document_metadata(username),
+        )
+
+        _add_directory_to_zip(archive, user_root / "uploads", "documents/uploads")
+        _add_directory_to_zip(archive, user_root / "processed", "documents/processed")
+        _add_directory_to_zip(archive, user_root / "exam_papers", "documents/exam_papers")
+
+    export_buffer.seek(0)
+    return export_buffer.getvalue()
+
+
+def _delete_account_data(username: str) -> None:
+    user_root = USERS_DIR / username
+
+    vector_store.delete_user_documents(username)
+    if user_root.exists():
+        shutil.rmtree(user_root, ignore_errors=True)
+
+    deleted = _database().delete_user(username)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -991,6 +1107,42 @@ async def auth_logout(
         _database().delete_session(session_id)
     _clear_session_cookie(response)
     return {"message": "Logged out"}
+
+
+@app.get("/account/export")
+async def export_account_data(current_user: AuthenticatedUser = Depends(get_current_user)):
+    export_bytes = await asyncio.to_thread(_build_account_export, current_user.username)
+    date_stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"studyspace-export-{current_user.username}-{date_stamp}.zip"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+    }
+    return Response(content=export_bytes, media_type="application/zip", headers=headers)
+
+
+@app.delete("/account")
+async def delete_account(
+    payload: DeleteAccountRequest,
+    response: Response,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    username = validate_username(payload.username)
+    password = validate_password(payload.password)
+
+    if current_user.username != username:
+        raise HTTPException(status_code=403, detail="You can only delete your own account")
+
+    user_record = _database().get_user_credentials(username)
+    if not user_record or not verify_password(
+        password,
+        user_record["password_hash"],
+        user_record["password_salt"],
+    ):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    await asyncio.to_thread(_delete_account_data, username)
+    _clear_session_cookie(response)
+    return {"message": "Account deleted successfully"}
 
 
 @app.post("/upload", status_code=status.HTTP_202_ACCEPTED)

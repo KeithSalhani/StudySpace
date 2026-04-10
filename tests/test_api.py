@@ -1,7 +1,9 @@
+import json
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from zipfile import ZipFile
 
 import pytest
 from fastapi import HTTPException, Response, UploadFile
@@ -53,6 +55,42 @@ async def test_auth_signin_rejects_invalid_credentials(main_module):
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid username or password"
+
+
+@pytest.mark.asyncio
+async def test_export_account_data_returns_zip_bundle(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    main_module.app.state.db.add_tag("alice", "AI")
+    main_module.app.state.db.add_note("alice", "Review chapters 1-3")
+    main_module.app.state.db.create_folder("alice", "Past Papers")
+    upload_dir = main_module._user_upload_dir("alice")
+    processed_dir = main_module._user_processed_dir("alice")
+    exam_dir = main_module._user_exam_papers_dir("alice")
+    (upload_dir / "source.pdf").write_bytes(b"pdf")
+    (processed_dir / "source.md").write_text("processed", encoding="utf-8")
+    (exam_dir / "paper.pdf").write_bytes(b"exam")
+    main_module.vector_store.list_all_document_metadata.return_value = [
+        {"filename": "source.pdf", "owner_username": "alice", "path": str(upload_dir / "source.pdf")}
+    ]
+
+    response = await main_module.export_account_data(current_user=user())
+
+    assert response.media_type == "application/zip"
+    assert "studyspace-export-alice-" in response.headers["content-disposition"]
+    archive = ZipFile(BytesIO(response.body))
+    names = set(archive.namelist())
+    assert "manifest.json" in names
+    assert "account/profile.json" in names
+    assert "workspace/tags.json" in names
+    assert "workspace/vector_documents.json" in names
+    assert "documents/uploads/source.pdf" in names
+    assert "documents/processed/source.md" in names
+    assert "documents/exam_papers/paper.pdf" in names
+
+    profile = json.loads(archive.read("account/profile.json").decode("utf-8"))
+    tags = json.loads(archive.read("workspace/tags.json").decode("utf-8"))
+    assert profile["username"] == "alice"
+    assert tags == ["AI"]
 
 
 @pytest.mark.asyncio
@@ -272,6 +310,42 @@ async def test_delete_document_removes_files_and_metadata(main_module, tmp_path)
     assert not uploaded_file.exists()
     assert not processed_file.exists()
     assert main_module.app.state.db.get_all_metadata("alice") == {}
+
+
+@pytest.mark.asyncio
+async def test_delete_account_removes_user_files_and_cookie(main_module):
+    main_module.app.state.db.create_user("alice", *main_module.create_password_record("password123"))
+    user_root = main_module.USERS_DIR / "alice"
+    user_root.mkdir(parents=True, exist_ok=True)
+    (user_root / "uploads").mkdir()
+    (user_root / "uploads" / "source.pdf").write_bytes(b"pdf")
+    response = Response()
+
+    result = await main_module.delete_account(
+        main_module.DeleteAccountRequest(username="alice", password="password123"),
+        response,
+        current_user=user(),
+    )
+
+    assert result == {"message": "Account deleted successfully"}
+    assert main_module.app.state.db.get_user("alice") is None
+    assert not user_root.exists()
+    main_module.vector_store.delete_user_documents.assert_called_once_with("alice")
+    assert "studyspace_session=" in response.headers["set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_delete_account_rejects_wrong_password(main_module):
+    main_module.app.state.db.create_user("alice", *main_module.create_password_record("password123"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main_module.delete_account(
+            main_module.DeleteAccountRequest(username="alice", password="wrongpass"),
+            Response(),
+            current_user=user(),
+        )
+
+    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio

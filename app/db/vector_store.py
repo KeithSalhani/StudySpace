@@ -342,6 +342,38 @@ class VectorStore:
                     return dict(metadata)
         return None
 
+    def list_all_document_metadata(self, owner_username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            seen_filenames = set()
+            documents: List[Dict[str, Any]] = []
+            for doc_data in self.documents.values():
+                metadata = doc_data.get("metadata", {})
+                filename = metadata.get("filename")
+                if metadata.get("owner_username") != owner_username or not filename or filename in seen_filenames:
+                    continue
+                seen_filenames.add(filename)
+                documents.append(dict(metadata))
+            return documents
+
+    def delete_user_documents(self, owner_username: str) -> int:
+        try:
+            with self._lock:
+                doc_ids_to_remove = [
+                    doc_id
+                    for doc_id, doc_data in self.documents.items()
+                    if doc_data.get("metadata", {}).get("owner_username") == owner_username
+                ]
+
+                for doc_id in doc_ids_to_remove:
+                    self.collection.delete(where={"doc_id": doc_id})
+                    self.documents.pop(doc_id, None)
+
+                logger.info("Deleted %s vector documents for user %s", len(doc_ids_to_remove), owner_username)
+                return len(doc_ids_to_remove)
+        except Exception as e:
+            logger.error(f"Error deleting documents for user {owner_username}: {str(e)}")
+            raise
+
     def get_full_document_content(self, owner_username: str, filename: str) -> Optional[Dict[str, Any]]:
         """
         Return the full processed content for a document when available.
