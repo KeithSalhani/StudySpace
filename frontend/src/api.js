@@ -283,6 +283,35 @@ export function generateFlashcards(filename) {
   });
 }
 
+export function generateStudySet({ filename, type, numItems = 10, difficulty = "Medium" }) {
+  return request("/study-sets/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      filename,
+      type,
+      num_items: numItems,
+      difficulty
+    })
+  });
+}
+
+export function getStudySets() {
+  return request("/study-sets");
+}
+
+export function getStudySet(studySetId) {
+  return request(`/study-sets/${encodeURIComponent(studySetId)}`);
+}
+
+export function removeStudySet(studySetId) {
+  return request(`/study-sets/${encodeURIComponent(studySetId)}`, {
+    method: "DELETE"
+  });
+}
+
 export function getMetadata() {
   return request("/metadata");
 }

@@ -17,17 +17,17 @@
   <a href="https://pytest.org/"><img alt="pytest" src="https://img.shields.io/badge/pytest-Tested-0A9EDC?logo=pytest&logoColor=white"></a>
 </p>
 
-Study Space is a personal academic workspace for turning your own material into searchable, interactive study sessions. Upload documents, organize them into folders, chat against indexed content with a transparent retrieval trace, generate quizzes and flashcards, and analyze collections of exam papers with Topic Miner.
+Study Space is a personal academic workspace for turning your own material into searchable, interactive study sessions. Upload documents, organize them into folders, chat against indexed content with a transparent retrieval trace, generate saved study sets for later review, and analyze collections of exam papers with Topic Miner.
 
 ## Overview
 
-Study Space combines a FastAPI backend, a React frontend, MongoDB for structured state, and ChromaDB for semantic retrieval. The result is a user-scoped workspace where uploaded documents stay tied to the authenticated user, AI responses cite their evidence, and revision tools sit next to the source material instead of in a separate app.
+Study Space combines a FastAPI backend, a React frontend, MongoDB for structured state, and ChromaDB for semantic retrieval. The result is a user-scoped workspace where uploaded documents and saved practice material stay tied to the authenticated user, AI responses cite their evidence, and revision tools sit next to the source material instead of in a separate app.
 
 ### What it does well
 
 - **Upload and organize** PDFs, DOCX, PPTX, XLSX, Markdown, HTML, images, audio, and more
 - **Chat with transparent RAG** using visible queries, retrieval runs, fused evidence, and cited sources
-- **Generate revision tools** like quizzes and flashcards from selected study material
+- **Generate and revisit study sets** including flashcards, MCQ quizzes, written self-checks, and mixed practice
 - **Mine exam folders** for recurring topics, patterns, and example questions
 - **Track academic context** with extracted metadata, tags, notes, and calendar-friendly event views
 - **Stay accessible** with voice input, high contrast mode, larger text, reduced motion, and stronger focus states
@@ -68,8 +68,10 @@ That gives the app an **agentic-style planning step** while keeping execution co
 
 ### Revision Tools
 
-- Quiz generation from selected documents
-- Flashcard generation for quick recall practice
+- Auto-saved study sets from selected documents
+- Flashcards, MCQ quizzes, written self-checks, and mixed practice modes
+- Saved set library for reopening or deleting generated practice material
+- Local-only written answer drafts for self-checking without storing attempts
 - Metadata extraction for deadlines, events, and academic context
 
 ### Topic Miner
@@ -101,13 +103,14 @@ That gives the app an **agentic-style planning step** while keeping execution co
 
 ### Model stack
 
-- **Gemini `gemini-3.1-flash-lite-preview`** powers chat, quiz generation, flashcards, metadata extraction, and Topic Miner flows.
+- **Gemini `gemini-3.1-flash-lite-preview`** powers chat, saved study set generation, metadata extraction, and Topic Miner flows.
 - **`facebook/bart-large-mnli`** is used for document classification.
 - **`all-MiniLM-L6-v2`** produces embeddings for semantic retrieval in ChromaDB.
 
 ### User isolation
 
 - MongoDB records are scoped by authenticated user identity.
+- Saved study sets are stored as user-owned MongoDB records and included in account export/deletion flows.
 - Study documents live under `app/users/<username>/uploads/`.
 - Processed markdown lives under `app/users/<username>/processed/`.
 - Exam papers live under `app/users/<username>/exam_papers/`.
@@ -250,6 +253,7 @@ app/
   core/
     ingestion.py          Document processing and extraction
     rag.py                Retrieval-planned RAG orchestration
+    study_set_generator.py Saved flashcard, MCQ, written, and mixed practice generation
     topic_miner.py        Exam-paper analysis
   db/
     mongo.py              MongoDB integration
@@ -281,9 +285,15 @@ tests/                    Backend test suite
 - `GET /folders`
 - `GET /tags`
 - `GET /notes`
+- `POST /study-sets/generate`
+- `GET /study-sets`
+- `GET /study-sets/{study_set_id}`
+- `DELETE /study-sets/{study_set_id}`
 - `POST /quiz/generate`
 - `POST /flashcards/generate`
 - `GET /metadata`
+
+The `/study-sets/*` endpoints are the current frontend path for generated revision material. The older `/quiz/generate` and `/flashcards/generate` endpoints remain available for compatibility.
 
 ### Topic Miner
 

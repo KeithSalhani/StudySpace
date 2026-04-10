@@ -60,6 +60,32 @@ def test_notes_are_scoped_per_user(db):
     assert db.delete_note("bob", note["id"]) is False
 
 
+def test_study_sets_are_scoped_per_user(db):
+    db.create_user("alice", "hash-a", "salt-a")
+    db.create_user("bob", "hash-b", "salt-b")
+
+    study_set = db.create_study_set(
+        "alice",
+        {
+            "type": "mcq_quiz",
+            "title": "Security Quiz",
+            "source_filename": "security.pdf",
+            "items": [{"id": 1, "type": "mcq", "question": "Q?", "options": ["A"], "correct_answer": "A"}],
+            "model": "gemini-test",
+            "difficulty": "Medium",
+        },
+    )
+
+    assert study_set["item_count"] == 1
+    assert db.list_study_sets("alice")[0]["title"] == "Security Quiz"
+    assert db.list_study_sets("bob") == []
+    assert db.get_study_set("alice", study_set["id"])["source_filename"] == "security.pdf"
+    assert db.get_study_set("bob", study_set["id"]) is None
+    assert db.delete_study_set("bob", study_set["id"]) is False
+    assert db.delete_study_set("alice", study_set["id"]) is True
+    assert db.list_study_sets("alice") == []
+
+
 def test_folders_are_scoped_per_user(db):
     db.create_user("alice", "hash-a", "salt-a")
     db.create_user("bob", "hash-b", "salt-b")
@@ -239,5 +265,7 @@ def test_migrate_initializes_documents_field(db_file):
     user = db.data["users"]["alice"]
     assert "documents" in user
     assert user["documents"] == {}
+    assert "study_sets" in user
+    assert user["study_sets"] == []
     assert user["tags"] == ["Tag1"]
     assert user["notes"][0]["content"] == "note1"

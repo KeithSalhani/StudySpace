@@ -37,6 +37,7 @@ class JSONDatabase:
                 "exam_folder_analyses": {},
                 "exam_documents": {},
                 "documents": {},
+                "study_sets": [],
                 "sessions": [],
             }
         return users[username]
@@ -64,6 +65,7 @@ class JSONDatabase:
                 user.setdefault("exam_folder_analyses", {})
                 user.setdefault("exam_documents", {})
                 user.setdefault("documents", {})
+                user.setdefault("study_sets", [])
                 user.setdefault("sessions", [])
             return migrated
 
@@ -423,6 +425,58 @@ class JSONDatabase:
             next_notes = [note for note in notes if note.get("id") != note_id]
             if len(next_notes) != len(notes):
                 user["notes"] = next_notes
+                self.save()
+                return True
+            return False
+
+    def create_study_set(self, username: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                raise ValueError("User not found")
+            now = self._now_iso()
+            study_set = {
+                **dict(payload),
+                "id": payload.get("id") or uuid.uuid4().hex,
+                "created_at": payload.get("created_at") or now,
+                "updated_at": payload.get("updated_at") or now,
+            }
+            study_set["item_count"] = len(study_set.get("items", [])) if isinstance(study_set.get("items"), list) else 0
+            user.setdefault("study_sets", []).append(study_set)
+            self.save()
+            return dict(study_set)
+
+    def list_study_sets(self, username: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return []
+            study_sets = [dict(item) for item in user.setdefault("study_sets", []) if isinstance(item, dict)]
+            return sorted(study_sets, key=lambda item: item.get("created_at") or "", reverse=True)
+
+    def get_study_set(self, username: str, study_set_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return None
+            for study_set in user.setdefault("study_sets", []):
+                if isinstance(study_set, dict) and study_set.get("id") == study_set_id:
+                    return dict(study_set)
+            return None
+
+    def delete_study_set(self, username: str, study_set_id: str) -> bool:
+        with self._lock:
+            user = self.data["users"].get(username)
+            if not user:
+                return False
+            study_sets = user.setdefault("study_sets", [])
+            next_study_sets = [
+                study_set
+                for study_set in study_sets
+                if not isinstance(study_set, dict) or study_set.get("id") != study_set_id
+            ]
+            if len(next_study_sets) != len(study_sets):
+                user["study_sets"] = next_study_sets
                 self.save()
                 return True
             return False

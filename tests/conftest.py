@@ -20,6 +20,8 @@ def main_module(monkeypatch, tmp_path):
     rag_chat = MagicMock(name="rag_chat")
     quiz_generator = MagicMock(name="quiz_generator")
     flashcard_generator = MagicMock(name="flashcard_generator")
+    study_set_generator = MagicMock(name="study_set_generator")
+    study_set_generator.model_id = "gemini-test"
     metadata_extractor = MagicMock(name="metadata_extractor")
     topic_miner = MagicMock(name="topic_miner")
     topic_miner.model_id = "gemini-test"
@@ -40,6 +42,10 @@ def main_module(monkeypatch, tmp_path):
     fake_flashcards = types.ModuleType("app.core.flashcard_generator")
     fake_flashcards.FlashcardGenerator = lambda processed_dir, api_key: flashcard_generator
 
+    fake_study_sets = types.ModuleType("app.core.study_set_generator")
+    fake_study_sets.ALLOWED_STUDY_SET_TYPES = {"flashcards", "mcq_quiz", "written_quiz", "mixed_practice"}
+    fake_study_sets.StudySetGenerator = lambda processed_dir, api_key: study_set_generator
+
     fake_metadata = types.ModuleType("app.core.metadata_extractor")
     fake_metadata.MetadataExtractor = lambda api_key: metadata_extractor
 
@@ -51,6 +57,7 @@ def main_module(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "app.core.rag", fake_rag)
     monkeypatch.setitem(sys.modules, "app.core.quiz_generator", fake_quiz)
     monkeypatch.setitem(sys.modules, "app.core.flashcard_generator", fake_flashcards)
+    monkeypatch.setitem(sys.modules, "app.core.study_set_generator", fake_study_sets)
     monkeypatch.setitem(sys.modules, "app.core.metadata_extractor", fake_metadata)
     monkeypatch.setitem(sys.modules, "app.core.topic_miner", fake_topic_miner)
 
