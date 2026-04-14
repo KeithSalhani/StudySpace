@@ -33,7 +33,7 @@ services:
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     ports:
-      - "8000:8000"
+      - "${HOST_PORT:-8001}:8000"
     volumes:
       - chroma_data:/app/app/chroma_db
       - user_data:/app/app/users
