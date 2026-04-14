@@ -3,6 +3,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Calendar from "./Calendar";
 import TopicMinerWorkspace from "./TopicMinerWorkspace";
+import LandingPage from "./LandingPage";
+import AuthScreen from "./AuthScreen";
 import {
   createNote,
   createTag,
@@ -632,71 +634,7 @@ function ChatMessageCard({ message }) {
   );
 }
 
-function AuthScreen({
-  mode,
-  form,
-  busy,
-  error,
-  onChange,
-  onSubmit,
-  onToggleMode
-}) {
-  const isSignUp = mode === "signup";
 
-  return (
-    <div className="auth-shell">
-      <div className="app-noise" />
-      <div className="orb orb-one" />
-      <div className="orb orb-two" />
-      <div className="orb orb-three" />
-      <section className="auth-panel glass-panel">
-        <div className="auth-kicker">Private workspace</div>
-        <h1>{isSignUp ? "Create your study space" : "Sign in to Study Space"}</h1>
-        <p className="auth-copy">
-          Notes, documents, quizzes, flashcards, and chat context stay scoped to your account.
-        </p>
-        <form
-          className="auth-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onSubmit();
-          }}
-        >
-          <label className="auth-field">
-            <span>Username</span>
-            <input
-              className="input"
-              autoComplete="username"
-              value={form.username}
-              onChange={(event) => onChange("username", event.currentTarget.value)}
-              placeholder="your-name"
-            />
-          </label>
-          <label className="auth-field">
-            <span>Password</span>
-            <input
-              className="input"
-              type="password"
-              autoComplete={isSignUp ? "new-password" : "current-password"}
-              value={form.password}
-              onChange={(event) => onChange("password", event.currentTarget.value)}
-              placeholder="At least 8 characters"
-            />
-          </label>
-          {error ? <div className="banner error-text">{error}</div> : null}
-          <div className="auth-actions">
-            <button className="small-button primary auth-submit" type="submit" disabled={busy}>
-              {busy ? "Working..." : isSignUp ? "Create account" : "Sign in"}
-            </button>
-            <button className="small-button" type="button" onClick={onToggleMode} disabled={busy}>
-              {isSignUp ? "Have an account?" : "Need an account?"}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
-  );
-}
 
 function FlashcardModal({ state, onClose, onFlip, onPrev, onNext }) {
   const cards = state.data?.cards || [];
@@ -1089,15 +1027,41 @@ function SettingsModal({
 }
 
 export default function App() {
+  const [showLanding, setShowLanding] = useState(!window.location.hash || window.location.hash === "#" ? true : false);
   const [theme, setTheme] = useState(
     localStorage.getItem("theme") === "dark" ? "dark" : "light"
   );
   const [authStatus, setAuthStatus] = useState("loading");
   const [currentUser, setCurrentUser] = useState(null);
-  const [authMode, setAuthMode] = useState("signin");
+  
+  // Set initial auth mode based on hash
+  const initialHash = window.location.hash;
+  const [authMode, setAuthMode] = useState(initialHash === "#signup" ? "signup" : "signin");
+  
   const [authForm, setAuthForm] = useState({ username: "", password: "" });
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === "#login") {
+        setShowLanding(false);
+        setAuthMode("signin");
+        setAuthError("");
+      } else if (hash === "#signup") {
+        setShowLanding(false);
+        setAuthMode("signup");
+        setAuthError("");
+      } else if (hash === "" || hash === "#") {
+        setShowLanding(true);
+        setAuthError("");
+      }
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
   const [documents, setDocuments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [expandedAssessments, setExpandedAssessments] = useState(new Set());
@@ -2295,6 +2259,18 @@ export default function App() {
   }
 
   if (authStatus !== "authenticated") {
+    if (showLanding) {
+      return (
+        <LandingPage
+          onLogin={() => {
+            window.location.hash = "login";
+          }}
+          onSignUp={() => {
+            window.location.hash = "signup";
+          }}
+        />
+      );
+    }
     return (
       <AuthScreen
         mode={authMode}
@@ -2307,7 +2283,7 @@ export default function App() {
         onSubmit={() => void handleAuthSubmit()}
         onToggleMode={() => {
           setAuthError("");
-          setAuthMode((prev) => (prev === "signin" ? "signup" : "signin"));
+          window.location.hash = authMode === "signin" ? "signup" : "login";
         }}
       />
     );
