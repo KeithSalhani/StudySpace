@@ -190,13 +190,15 @@ Persistent data is stored in named volumes for:
 - Chroma embeddings
 - User uploads and processed files
 
+The default image is CPU-only. It installs CPU PyTorch wheels and excludes the optional Docling ASR extras, so regular local runs do not pull CUDA or NVIDIA packages.
+
 ### Optional GPU profile
 
 ```bash
 docker compose --profile gpu up --build app-gpu mongo
 ```
 
-Use this only if your host has NVIDIA Container Toolkit configured. The current application still defaults major workloads to CPU, so the GPU profile is best treated as an optional environment path rather than a required deployment mode.
+Use this only if your host has NVIDIA Container Toolkit configured. The GPU profile builds a separate image that includes the optional GPU/ASR dependency set.
 
 ### Stop or reset
 

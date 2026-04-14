@@ -1,14 +1,15 @@
 """
 Document processing module using Docling.
 """
+import logging
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import AsrPipelineOptions, PdfPipelineOptions
 from docling.document_converter import AudioFormatOption, DocumentConverter, PdfFormatOption
 from pathlib import Path
-import logging
 from typing import List, Optional
 from app.core.classification import Classifier
+from app.config import ENABLE_DOCLING_ASR
 
 logger = logging.getLogger(__name__)
 
@@ -49,47 +50,63 @@ DOC_PROCESSOR_SUPPORTED_SUFFIXES = tuple(
             ".tif",
             ".tiff",
             ".webp",
-            # Audio formats supported by Docling's ASR pipeline.
-            ".mp3",
-            ".wav",
-            ".m4a",
-            ".aac",
-            ".flac",
-            ".ogg",
-            ".oga",
         }
     )
 )
 
-DOC_PROCESSOR_SUPPORTED_TYPES_LABEL = ", ".join(ext.lstrip(".") for ext in DOC_PROCESSOR_SUPPORTED_SUFFIXES)
+DOC_PROCESSOR_AUDIO_SUFFIXES = (
+    ".aac",
+    ".flac",
+    ".m4a",
+    ".mp3",
+    ".oga",
+    ".ogg",
+    ".wav",
+)
+
+def _supports_asr() -> bool:
+    return ENABLE_DOCLING_ASR
+
+def _get_supported_suffixes() -> tuple[str, ...]:
+    suffixes = set(DOC_PROCESSOR_SUPPORTED_SUFFIXES)
+    if _supports_asr():
+        suffixes.update(DOC_PROCESSOR_AUDIO_SUFFIXES)
+    return tuple(sorted(suffixes))
+
+def _get_supported_types_label() -> str:
+    return ", ".join(ext.lstrip(".") for ext in _get_supported_suffixes())
 
 class DocumentProcessor:
     def __init__(self):
         pdf_pipeline_options = PdfPipelineOptions()
         pdf_pipeline_options.accelerator_options = accelerator_options
-        asr_pipeline_options = AsrPipelineOptions()
-        # Force ASR to CPU because the local GTX 1050 Ti is below the CUDA
-        # capability supported by the installed PyTorch build.
-        asr_pipeline_options.accelerator_options.device = AcceleratorDevice.CPU
-        self.converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pdf_pipeline_options,
-                ),
-                InputFormat.AUDIO: AudioFormatOption(
-                    pipeline_options=asr_pipeline_options,
-                ),
-            }
-        )
+        format_options = {
+            InputFormat.PDF: PdfFormatOption(
+                pipeline_options=pdf_pipeline_options,
+            ),
+        }
+
+        if _supports_asr():
+            asr_pipeline_options = AsrPipelineOptions()
+            # Keep ASR on CPU unless the application code is updated to manage
+            # accelerator selection explicitly at runtime.
+            asr_pipeline_options.accelerator_options.device = AcceleratorDevice.CPU
+            format_options[InputFormat.AUDIO] = AudioFormatOption(
+                pipeline_options=asr_pipeline_options,
+            )
+        else:
+            logger.info("Docling ASR support disabled; audio uploads are not enabled")
+
+        self.converter = DocumentConverter(format_options=format_options)
         self.classifier = Classifier()
 
     @staticmethod
     def get_supported_suffixes() -> tuple[str, ...]:
-        return DOC_PROCESSOR_SUPPORTED_SUFFIXES
+        return _get_supported_suffixes()
 
     @staticmethod
     def get_supported_types_label() -> str:
-        return DOC_PROCESSOR_SUPPORTED_TYPES_LABEL
+        return _get_supported_types_label()
 
     @classmethod
     def supports_file(cls, filename: str) -> bool:
