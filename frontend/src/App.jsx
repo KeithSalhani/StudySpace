@@ -11,12 +11,13 @@ import {
   deleteAccount,
   deleteDocument,
   exportAccountData,
-  generateFlashcards,
-  generateQuiz,
+  generateStudySet,
   getCurrentUser,
   getDocuments,
   getMetadata,
   getNotes,
+  getStudySet,
+  getStudySets,
   getTags,
   getUploadConfig,
   getUploadJobs,
@@ -24,6 +25,7 @@ import {
   signOut,
   signUp,
   removeNote,
+  removeStudySet,
   removeTag,
   sendChatMessage,
   uploadDocument,
@@ -51,6 +53,17 @@ const starterQuestions = [
 ];
 
 const PRIVACY_CONTACT_EMAIL = "gdpr@studyspace.ie";
+const STUDY_SET_TYPES = [
+  { value: "flashcards", label: "Flashcards", count: 10 },
+  { value: "mcq_quiz", label: "MCQ Quiz", count: 5 },
+  { value: "written_quiz", label: "Written Quiz", count: 5 },
+  { value: "mixed_practice", label: "Mixed Practice", count: 9 }
+];
+const STUDY_SET_TYPE_LABELS = STUDY_SET_TYPES.reduce((acc, item) => {
+  acc[item.value] = item.label;
+  return acc;
+}, {});
+const STUDY_SET_DIFFICULTIES = ["Easy", "Medium", "Hard"];
 
 function getAccessibilitySettings() {
   if (typeof window === "undefined") {
@@ -157,6 +170,14 @@ function formatDate(dateString) {
   } catch (_error) {
     return dateString;
   }
+}
+
+function getStudySetLabel(type) {
+  return STUDY_SET_TYPE_LABELS[type] || "Study Set";
+}
+
+function getStudySetCount(type) {
+  return STUDY_SET_TYPES.find((item) => item.value === type)?.count || 10;
 }
 
 function autoResize(textarea) {
@@ -826,6 +847,184 @@ function QuizModal({ state, onClose, onAnswer }) {
   );
 }
 
+function StudySetPracticeModal({
+  state,
+  onClose,
+  onAnswer,
+  onFlip,
+  onPrev,
+  onNext,
+  onWrittenChange,
+  onReveal
+}) {
+  const items = Array.isArray(state.data?.items) ? state.data.items : [];
+  const currentItem = items[state.index];
+  const dialogRef = useDialog(true, onClose);
+  const createdAt = state.data?.created_at ? formatDate(state.data.created_at) : "";
+
+  function renderItem(item) {
+    if (!item) {
+      return <div className="empty-state">No study items returned.</div>;
+    }
+
+    if (item.type === "flashcard") {
+      return (
+        <button
+          className="flashcard practice-flashcard"
+          type="button"
+          onClick={onFlip}
+          aria-label={`Flip flashcard ${state.index + 1} of ${items.length}`}
+        >
+          <div>
+            <div className="flashcard-label">{state.side === "front" ? "Prompt" : "Answer"}</div>
+            <div className="flashcard-text">{state.side === "front" ? item.front : item.back}</div>
+          </div>
+        </button>
+      );
+    }
+
+    if (item.type === "mcq") {
+      const selected = state.answers[state.index];
+      const answered = selected !== undefined;
+      return (
+        <section className="practice-item">
+          <h3>{item.question}</h3>
+          <div className="quiz-options">
+            {(item.options || []).map((option) => {
+              const classNames = ["quiz-option"];
+              if (selected === option) {
+                classNames.push("selected");
+              }
+              if (answered && option === item.correct_answer) {
+                classNames.push("correct");
+              } else if (answered && selected === option && option !== item.correct_answer) {
+                classNames.push("incorrect");
+              }
+
+              return (
+                <button
+                  key={option}
+                  className={classNames.join(" ")}
+                  type="button"
+                  disabled={answered}
+                  onClick={() => onAnswer(state.index, option)}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+          {answered ? (
+            <div className="quiz-explanation">
+              <div className="quiz-feedback">
+                {selected === item.correct_answer ? "Correct." : `Correct answer: ${item.correct_answer}`}
+              </div>
+              <strong>Why:</strong> {item.explanation}
+            </div>
+          ) : null}
+        </section>
+      );
+    }
+
+    const revealed = Boolean(state.revealed[state.index]);
+    return (
+      <section className="practice-item">
+        <h3>{item.prompt}</h3>
+        <textarea
+          className="textarea written-answer"
+          value={state.writtenDrafts[state.index] || ""}
+          onChange={(event) => onWrittenChange(state.index, event.currentTarget.value)}
+          placeholder="Draft your answer here. It is not saved."
+        />
+        <button className="modal-button primary" type="button" onClick={() => onReveal(state.index)}>
+          {revealed ? "Hide model answer" : "Reveal model answer"}
+        </button>
+        {revealed ? (
+          <div className="written-review">
+            <div>
+              <div className="flashcard-label">Model answer</div>
+              <p>{item.model_answer}</p>
+            </div>
+            <div>
+              <div className="flashcard-label">Rubric</div>
+              <p>{item.rubric}</p>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        className="modal practice-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="study-set-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div>
+            <div id="study-set-title" className="chat-title">
+              {state.data?.title || "Study Set"}
+            </div>
+            <div className="header-subtitle">
+              {state.loading
+                ? "Building and saving your study set."
+                : state.error
+                  ? "Study set generation failed."
+                  : `${getStudySetLabel(state.data?.type)} from ${state.data?.source_filename || "your source"}${createdAt ? ` • ${createdAt}` : ""}`}
+            </div>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="modal-body">
+          {state.loading ? (
+            <div className="empty-state">Generating and saving...</div>
+          ) : state.error ? (
+            <div className="empty-state error-text">{state.error}</div>
+          ) : items.length ? (
+            <>
+              <div className="practice-progress">
+                <span className="micro-pill">{currentItem?.type || "item"}</span>
+                <span>
+                  {state.index + 1} / {items.length}
+                </span>
+              </div>
+              {renderItem(currentItem)}
+              <div className="flashcard-controls">
+                <button className="modal-button" type="button" onClick={onPrev} disabled={state.index === 0}>
+                  Back
+                </button>
+                {currentItem?.type === "flashcard" ? (
+                  <button className="modal-button" type="button" onClick={onFlip}>
+                    Flip
+                  </button>
+                ) : null}
+                <button
+                  className="modal-button primary"
+                  type="button"
+                  onClick={onNext}
+                  disabled={state.index >= items.length - 1}
+                >
+                  Next
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">No study items returned.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SidebarToggle({ side, open, onClick, mobile = false, label }) {
   const buttonLabel = label || `${open ? "Hide" : "Open"} ${side} sidebar`;
 
@@ -1046,7 +1245,7 @@ function SettingsModal({
                 <div>
                   <div className="settings-toggle-title">Export account data</div>
                   <div className="meta-text">
-                    Download your account data, uploaded files, processed files, notes, folders, and related metadata as a ZIP.
+                    Download your account data, uploaded files, processed files, notes, folders, saved study sets, and related metadata as a ZIP.
                   </div>
                 </div>
                 <button className="small-button primary" type="button" onClick={() => void onExportAccount()} disabled={exportBusy}>
@@ -1058,7 +1257,7 @@ function SettingsModal({
                 <div>
                   <div className="settings-toggle-title">Delete account</div>
                   <div className="meta-text">
-                    Permanently remove <strong>@{currentUsername}</strong> and all associated files, metadata, and notes. This cannot be undone.
+                    Permanently remove <strong>@{currentUsername}</strong> and all associated files, metadata, notes, and saved study sets. This cannot be undone.
                   </div>
                 </div>
                 <div className="settings-delete-grid">
@@ -1141,13 +1340,13 @@ function PrivacyNoticeScreen({ authenticated, username, onClose }) {
             <h2>Data collected</h2>
             <p>
               Study Space stores your username, password hash and salt, session records, uploaded study files, processed document text,
-              notes, tags, folders, exam papers, exam folder analyses, and document metadata used by search and study features.
+              notes, tags, folders, saved generated study sets, exam papers, exam folder analyses, and document metadata used by search and study features.
             </p>
           </section>
           <section className="privacy-section">
             <h2>How your data is used</h2>
             <p>
-              Data is used to authenticate your account, organize study material, provide chat, quizzes, flashcards, topic mining, and
+              Data is used to authenticate your account, organize study material, provide chat, generate and revisit quizzes or flashcards, topic mining, and
               keep your workspace available across sessions.
             </p>
           </section>
@@ -1161,7 +1360,7 @@ function PrivacyNoticeScreen({ authenticated, username, onClose }) {
           <section className="privacy-section">
             <h2>Retention and local storage</h2>
             <p>
-              Account data remains until you delete content or delete the account. Session records expire automatically. Theme and
+              Account data, including saved study sets, remains until you delete content or delete the account. Session records expire automatically. Theme and
               accessibility preferences are stored in your browser.
             </p>
           </section>
@@ -1244,6 +1443,20 @@ export default function App() {
   const [uploadJobs, setUploadJobs] = useState([]);
   const [uploadAccept, setUploadAccept] = useState("");
   const [selectedDocument, setSelectedDocument] = useState("");
+  const [studySets, setStudySets] = useState([]);
+  const [studySetType, setStudySetType] = useState("mcq_quiz");
+  const [studySetDifficulty, setStudySetDifficulty] = useState("Medium");
+  const [studySetState, setStudySetState] = useState({
+    open: false,
+    loading: false,
+    error: "",
+    data: null,
+    index: 0,
+    side: "front",
+    answers: {},
+    writtenDrafts: {},
+    revealed: {}
+  });
   const [flashcardState, setFlashcardState] = useState({
     open: false,
     loading: false,
@@ -1309,6 +1522,20 @@ export default function App() {
     setIsSending(false);
     setUploadJobs([]);
     setSelectedDocument("");
+    setStudySets([]);
+    setStudySetType("mcq_quiz");
+    setStudySetDifficulty("Medium");
+    setStudySetState({
+      open: false,
+      loading: false,
+      error: "",
+      data: null,
+      index: 0,
+      side: "front",
+      answers: {},
+      writtenDrafts: {},
+      revealed: {}
+    });
     setTagDraft("");
     setNoteDraft("");
     setErrorBanner("");
@@ -1454,6 +1681,7 @@ export default function App() {
     void loadUploadJobsList();
     void loadUploadConfig();
     void loadMetadata();
+    void loadStudySets();
 
     const timerId = window.setInterval(() => {
       void loadUploadJobsList();
@@ -1518,6 +1746,19 @@ export default function App() {
         return;
       }
       console.error("Failed to load metadata:", error);
+    }
+  }
+
+  async function loadStudySets() {
+    try {
+      const payload = await getStudySets();
+      setStudySets(Array.isArray(payload.study_sets) ? payload.study_sets : []);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      showError(error.message);
     }
   }
 
@@ -1884,88 +2125,120 @@ export default function App() {
     }
   }
 
-  async function handleGenerateFlashcards() {
+  async function handleGenerateStudySet() {
     if (!selectedDocument) {
       return;
     }
 
-    announce(`Generating flashcards for ${selectedDocument}.`);
+    const label = getStudySetLabel(studySetType);
+    announce(`Generating ${label} for ${selectedDocument}.`);
 
-    setFlashcardState({
+    setStudySetState({
       open: true,
       loading: true,
       error: "",
       data: null,
+      index: 0,
       side: "front",
-      index: 0
+      answers: {},
+      writtenDrafts: {},
+      revealed: {}
     });
 
     try {
-      const payload = await generateFlashcards(selectedDocument);
-      setFlashcardState({
+      const payload = await generateStudySet({
+        filename: selectedDocument,
+        type: studySetType,
+        numItems: getStudySetCount(studySetType),
+        difficulty: studySetDifficulty
+      });
+      setStudySets((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)]);
+      setStudySetState({
         open: true,
         loading: false,
         error: "",
         data: payload,
+        index: 0,
         side: "front",
-        index: 0
+        answers: {},
+        writtenDrafts: {},
+        revealed: {}
       });
-      announce("Flashcards ready.");
+      announce(`${label} saved and ready.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
         return;
       }
-      setFlashcardState({
+      setStudySetState({
         open: true,
         loading: false,
         error: error.message,
         data: null,
+        index: 0,
         side: "front",
-        index: 0
+        answers: {},
+        writtenDrafts: {},
+        revealed: {}
       });
-      announce("Flashcard generation failed.");
+      announce("Study set generation failed.");
     }
   }
 
-  async function handleGenerateQuiz() {
-    if (!selectedDocument) {
-      return;
-    }
-
-    announce(`Generating quiz for ${selectedDocument}.`);
-
-    setQuizState({
-      open: true,
-      loading: true,
-      error: "",
-      data: null,
-      answers: {}
-    });
-
+  async function handleOpenStudySet(studySetId) {
     try {
-      const payload = await generateQuiz(selectedDocument);
-      setQuizState({
+      const payload = await getStudySet(studySetId);
+      setStudySetState({
         open: true,
         loading: false,
         error: "",
         data: payload,
-        answers: {}
+        index: 0,
+        side: "front",
+        answers: {},
+        writtenDrafts: {},
+        revealed: {}
       });
-      announce("Quiz ready.");
+      announce(`${payload.title || "Study set"} opened.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
         return;
       }
-      setQuizState({
-        open: true,
-        loading: false,
-        error: error.message,
-        data: null,
-        answers: {}
-      });
-      announce("Quiz generation failed.");
+      showError(error.message);
+    }
+  }
+
+  async function handleDeleteStudySet(studySetId) {
+    const target = studySets.find((item) => item.id === studySetId);
+    const title = target?.title || "this study set";
+    if (!window.confirm(`Delete ${title}?`)) {
+      return;
+    }
+
+    try {
+      await removeStudySet(studySetId);
+      setStudySets((prev) => prev.filter((item) => item.id !== studySetId));
+      if (studySetState.data?.id === studySetId) {
+        setStudySetState({
+          open: false,
+          loading: false,
+          error: "",
+          data: null,
+          index: 0,
+          side: "front",
+          answers: {},
+          writtenDrafts: {},
+          revealed: {}
+        });
+      }
+      announce("Study set deleted.");
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      showError(error.message);
     }
   }
 
@@ -2457,35 +2730,84 @@ export default function App() {
         </section>
 
         <section className="section">
-          <div className="section-title">Tools</div>
-          <button className="studio-card audio-card" type="button" disabled>
-            <div className="studio-card-icon">🎧</div>
-            <div>
-              <div className="studio-card-title">Audio recap</div>
-            </div>
-          </button>
+          <div className="section-head">
+            <div className="section-title">Generate</div>
+            <div className="helper-text">Auto-saves</div>
+          </div>
+          <div className="study-mode-grid" role="group" aria-label="Study set type">
+            {STUDY_SET_TYPES.map((type) => (
+              <button
+                key={type.value}
+                className={`study-mode-button ${studySetType === type.value ? "active" : ""}`}
+                type="button"
+                aria-pressed={studySetType === type.value}
+                onClick={() => setStudySetType(type.value)}
+              >
+                {type.label}
+              </button>
+            ))}
+          </div>
+          <select
+            className="select"
+            aria-label="Study difficulty"
+            value={studySetDifficulty}
+            onChange={(event) => setStudySetDifficulty(event.currentTarget.value)}
+          >
+            {STUDY_SET_DIFFICULTIES.map((difficulty) => (
+              <option key={difficulty} value={difficulty}>
+                {difficulty}
+              </option>
+            ))}
+          </select>
           <button
             className="studio-card quiz-card"
             type="button"
             disabled={!hasStudioSelection}
-            onClick={() => void handleGenerateQuiz()}
+            onClick={() => void handleGenerateStudySet()}
           >
             <div className="studio-card-icon">📝</div>
             <div>
-              <div className="studio-card-title">Quiz me</div>
+              <div className="studio-card-title">Generate {getStudySetLabel(studySetType)}</div>
+              <div className="meta-text">{getStudySetCount(studySetType)} items from the selected source</div>
             </div>
           </button>
-          <button
-            className="studio-card flashcard-card"
-            type="button"
-            disabled={!hasStudioSelection}
-            onClick={() => void handleGenerateFlashcards()}
-          >
-            <div className="studio-card-icon">🗂</div>
-            <div>
-              <div className="studio-card-title">Flashcards</div>
-            </div>
-          </button>
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <div className="section-title">Saved sets</div>
+            <div className="helper-text">{studySets.length} saved</div>
+          </div>
+          <div className="saved-study-list">
+            {studySets.length ? (
+              studySets.map((studySet) => (
+                <div key={studySet.id} className="saved-study-card">
+                  <button
+                    className="saved-study-main"
+                    type="button"
+                    onClick={() => void handleOpenStudySet(studySet.id)}
+                  >
+                    <div className="saved-study-title">{studySet.title}</div>
+                    <div className="meta-text">
+                      {getStudySetLabel(studySet.type)} • {studySet.item_count || studySet.items?.length || 0} items
+                    </div>
+                    <div className="meta-text">{studySet.source_filename}</div>
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title="Delete saved set"
+                    aria-label={`Delete ${studySet.title}`}
+                    onClick={() => void handleDeleteStudySet(studySet.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="empty-card compact">No saved study sets yet.</div>
+            )}
+          </div>
         </section>
 
         <TopicMinerWorkspace
@@ -2921,37 +3243,67 @@ export default function App() {
         </div>
       ) : null}
 
-      {flashcardState.open ? (
-        <FlashcardModal
-          state={flashcardState}
+      {studySetState.open ? (
+        <StudySetPracticeModal
+          state={studySetState}
           onClose={() =>
-            setFlashcardState({
+            setStudySetState({
               open: false,
               loading: false,
               error: "",
               data: null,
+              index: 0,
               side: "front",
-              index: 0
+              answers: {},
+              writtenDrafts: {},
+              revealed: {}
             })
           }
           onFlip={() =>
-            setFlashcardState((prev) => ({
+            setStudySetState((prev) => ({
               ...prev,
               side: prev.side === "front" ? "back" : "front"
             }))
           }
           onPrev={() =>
-            setFlashcardState((prev) => ({
+            setStudySetState((prev) => ({
               ...prev,
               index: Math.max(0, prev.index - 1),
               side: "front"
             }))
           }
           onNext={() =>
-            setFlashcardState((prev) => ({
+            setStudySetState((prev) => ({
               ...prev,
-              index: Math.min((prev.data?.cards?.length || 1) - 1, prev.index + 1),
+              index: Math.min((prev.data?.items?.length || 1) - 1, prev.index + 1),
               side: "front"
+            }))
+          }
+          onAnswer={(itemIndex, selectedOption) =>
+            setStudySetState((prev) => ({
+              ...prev,
+              answers: {
+                ...prev.answers,
+                [itemIndex]: selectedOption
+              }
+            }))
+          }
+          onWrittenChange={(itemIndex, value) =>
+            setStudySetState((prev) => ({
+              ...prev,
+              writtenDrafts: {
+                ...prev.writtenDrafts,
+                [itemIndex]: value
+              }
+            }))
+          }
+          onReveal={(itemIndex) =>
+            setStudySetState((prev) => ({
+              ...prev,
+              revealed: {
+                ...prev.revealed,
+                [itemIndex]: !prev.revealed[itemIndex]
+              }
             }))
           }
         />
@@ -2981,29 +3333,6 @@ export default function App() {
         />
       ) : null}
 
-      {quizState.open ? (
-        <QuizModal
-          state={quizState}
-          onClose={() =>
-            setQuizState({
-              open: false,
-              loading: false,
-              error: "",
-              data: null,
-              answers: {}
-            })
-          }
-          onAnswer={(questionIndex, selectedOption) =>
-            setQuizState((prev) => ({
-              ...prev,
-              answers: {
-                ...prev.answers,
-                [questionIndex]: selectedOption
-              }
-            }))
-          }
-        />
-      ) : null}
     </div>
   );
 }

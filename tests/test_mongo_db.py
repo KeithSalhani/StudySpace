@@ -48,6 +48,32 @@ def test_folder_and_document_metadata_roundtrip(mongo_db):
     assert mongo_db.get_all_metadata("alice")["exam.pdf"]["folder_name"] == "Past Papers"
 
 
+def test_study_set_roundtrip(mongo_db):
+    mongo_db.create_user("alice", "hash", "salt")
+    mongo_db.create_user("bob", "hash", "salt")
+
+    study_set = mongo_db.create_study_set(
+        "alice",
+        {
+            "type": "written_quiz",
+            "title": "Written Checks",
+            "source_filename": "lecture.pdf",
+            "items": [{"id": 1, "type": "written", "prompt": "Explain X", "model_answer": "X", "rubric": "Mention X"}],
+            "model": "gemini-test",
+            "difficulty": "Hard",
+        },
+    )
+
+    assert study_set["item_count"] == 1
+    assert mongo_db.list_study_sets("alice")[0]["title"] == "Written Checks"
+    assert mongo_db.list_study_sets("bob") == []
+    assert mongo_db.get_study_set("alice", study_set["id"])["difficulty"] == "Hard"
+    assert mongo_db.get_study_set("bob", study_set["id"]) is None
+    assert mongo_db.delete_study_set("bob", study_set["id"]) is False
+    assert mongo_db.delete_study_set("alice", study_set["id"]) is True
+    assert mongo_db.list_study_sets("alice") == []
+
+
 def test_exam_folder_analysis_becomes_stale_when_document_moves(mongo_db):
     mongo_db.create_user("alice", "hash", "salt")
     security = mongo_db.create_exam_folder("alice", "Security")
@@ -108,6 +134,17 @@ def test_get_raw_user_aggregates_all_owned_data(mongo_db):
     study_folder = mongo_db.create_folder("alice", "Past Papers")
     exam_folder = mongo_db.create_exam_folder("alice", "Security")
     mongo_db.set_document_metadata("alice", "exam.pdf", {"tag": "AI", "folder_id": study_folder["id"]})
+    study_set = mongo_db.create_study_set(
+        "alice",
+        {
+            "type": "flashcards",
+            "title": "Security Cards",
+            "source_filename": "exam.pdf",
+            "items": [{"id": 1, "type": "flashcard", "front": "Q", "back": "A"}],
+            "model": "gemini-test",
+            "difficulty": "Medium",
+        },
+    )
     mongo_db.update_exam_folder_analysis(
         "alice",
         exam_folder["id"],
@@ -145,6 +182,7 @@ def test_get_raw_user_aggregates_all_owned_data(mongo_db):
     assert raw_user["folders"][0]["name"] == "Past Papers"
     assert raw_user["exam_folders"][0]["name"] == "Security"
     assert raw_user["documents"]["exam.pdf"]["tag"] == "AI"
+    assert raw_user["study_sets"][0]["id"] == study_set["id"]
     assert raw_user["exam_folder_analyses"][exam_folder["id"]]["status"] == "completed"
     assert raw_user["exam_documents"]["paper-1"]["filename"] == "security.pdf"
     assert raw_user["sessions"][0]["id"] == "session-1"
@@ -159,6 +197,17 @@ def test_delete_user_removes_user_and_owned_records(mongo_db):
     study_folder = mongo_db.create_folder("alice", "Past Papers")
     exam_folder = mongo_db.create_exam_folder("alice", "Security")
     mongo_db.set_document_metadata("alice", "exam.pdf", {"tag": "AI", "folder_id": study_folder["id"]})
+    mongo_db.create_study_set(
+        "alice",
+        {
+            "type": "flashcards",
+            "title": "Security Cards",
+            "source_filename": "exam.pdf",
+            "items": [{"id": 1, "type": "flashcard", "front": "Q", "back": "A"}],
+            "model": "gemini-test",
+            "difficulty": "Medium",
+        },
+    )
     mongo_db.update_exam_folder_analysis(
         "alice",
         exam_folder["id"],
@@ -197,6 +246,7 @@ def test_delete_user_removes_user_and_owned_records(mongo_db):
     assert mongo_db.list_folders("alice") == []
     assert mongo_db.list_exam_folders("alice") == []
     assert mongo_db.get_all_metadata("alice") == {}
+    assert mongo_db.list_study_sets("alice") == []
     assert mongo_db.list_exam_documents("alice") == []
 
 

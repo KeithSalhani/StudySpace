@@ -20,6 +20,7 @@ class MongoDatabase:
         self.notes: Collection = self.database["notes"]
         self.folders: Collection = self.database["folders"]
         self.documents: Collection = self.database["documents"]
+        self.study_sets: Collection = self.database["study_sets"]
         self.exam_folder_analyses: Collection = self.database["exam_folder_analyses"]
         self.exam_documents: Collection = self.database["exam_documents"]
 
@@ -78,6 +79,15 @@ class MongoDatabase:
         }
 
     @staticmethod
+    def _serialize_study_set(study_set: Dict[str, Any]) -> Dict[str, Any]:
+        payload = dict(study_set)
+        payload.pop("_id", None)
+        payload.pop("user_id", None)
+        payload["created_at"] = MongoDatabase._iso(payload.get("created_at"))
+        payload["updated_at"] = MongoDatabase._iso(payload.get("updated_at"))
+        return payload
+
+    @staticmethod
     def _serialize_exam_document(document: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(document)
         payload.pop("_id", None)
@@ -121,6 +131,8 @@ class MongoDatabase:
             unique=True,
         )
         self.documents.create_index([("user_id", ASCENDING), ("filename", ASCENDING)], unique=True)
+        self.study_sets.create_index([("id", ASCENDING)], unique=True)
+        self.study_sets.create_index([("user_id", ASCENDING), ("created_at", ASCENDING)])
         self.exam_folder_analyses.create_index([("user_id", ASCENDING), ("folder_id", ASCENDING)], unique=True)
         self.exam_documents.create_index([("id", ASCENDING)], unique=True)
         self.exam_documents.create_index([("user_id", ASCENDING), ("folder_id", ASCENDING)])
@@ -194,6 +206,7 @@ class MongoDatabase:
             [("folder_name", ASCENDING), ("filename", ASCENDING)]
         )
         documents = self.documents.find({"user_id": user_id}, {"_id": 0, "filename": 1, "metadata": 1})
+        study_sets = self.study_sets.find({"user_id": user_id}, {"_id": 0}).sort("created_at", ASCENDING)
 
         return {
             "id": user.get("id"),
@@ -225,6 +238,7 @@ class MongoDatabase:
                 for record in documents
                 if record.get("filename")
             },
+            "study_sets": [self._serialize_study_set(study_set) for study_set in study_sets],
             "sessions": [
                 {
                     "id": session.get("id"),
@@ -283,6 +297,7 @@ class MongoDatabase:
         self.documents.delete_many({"user_id": user_id})
         self.exam_folder_analyses.delete_many({"user_id": user_id})
         self.exam_documents.delete_many({"user_id": user_id})
+        self.study_sets.delete_many({"user_id": user_id})
         result = self.users.delete_one({"id": user_id})
         return result.deleted_count > 0
 
@@ -463,6 +478,41 @@ class MongoDatabase:
         if not user:
             return False
         result = self.notes.delete_one({"user_id": user["id"], "id": note_id})
+        return result.deleted_count > 0
+
+    def create_study_set(self, username: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        user = self._require_user_record(username)
+        now = self._now()
+        study_set = {
+            **dict(payload),
+            "id": payload.get("id") or uuid.uuid4().hex,
+            "user_id": user["id"],
+            "created_at": self._coerce_datetime(payload.get("created_at")) or now,
+            "updated_at": self._coerce_datetime(payload.get("updated_at")) or now,
+        }
+        study_set["item_count"] = len(study_set.get("items", [])) if isinstance(study_set.get("items"), list) else 0
+        self.study_sets.insert_one(study_set)
+        return self._serialize_study_set(study_set)
+
+    def list_study_sets(self, username: str) -> List[Dict[str, Any]]:
+        user = self._get_user_record(username)
+        if not user:
+            return []
+        study_sets = self.study_sets.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1)
+        return [self._serialize_study_set(study_set) for study_set in study_sets]
+
+    def get_study_set(self, username: str, study_set_id: str) -> Optional[Dict[str, Any]]:
+        user = self._get_user_record(username)
+        if not user:
+            return None
+        study_set = self.study_sets.find_one({"user_id": user["id"], "id": study_set_id}, {"_id": 0})
+        return self._serialize_study_set(study_set) if study_set else None
+
+    def delete_study_set(self, username: str, study_set_id: str) -> bool:
+        user = self._get_user_record(username)
+        if not user:
+            return False
+        result = self.study_sets.delete_one({"user_id": user["id"], "id": study_set_id})
         return result.deleted_count > 0
 
     def set_document_metadata(self, username: str, filename: str, metadata: Dict[str, Any]) -> None:

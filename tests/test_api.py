@@ -62,6 +62,17 @@ async def test_export_account_data_returns_zip_bundle(main_module):
     main_module.app.state.db.create_user("alice", "hash", "salt")
     main_module.app.state.db.add_tag("alice", "AI")
     main_module.app.state.db.add_note("alice", "Review chapters 1-3")
+    main_module.app.state.db.create_study_set(
+        "alice",
+        {
+            "type": "flashcards",
+            "title": "Chapter Cards",
+            "source_filename": "source.pdf",
+            "items": [{"id": 1, "type": "flashcard", "front": "Q", "back": "A"}],
+            "model": "gemini-test",
+            "difficulty": "Medium",
+        },
+    )
     main_module.app.state.db.create_folder("alice", "Past Papers")
     upload_dir = main_module._user_upload_dir("alice")
     processed_dir = main_module._user_processed_dir("alice")
@@ -82,6 +93,7 @@ async def test_export_account_data_returns_zip_bundle(main_module):
     assert "manifest.json" in names
     assert "account/profile.json" in names
     assert "workspace/tags.json" in names
+    assert "workspace/study_sets.json" in names
     assert "workspace/vector_documents.json" in names
     assert "documents/uploads/source.pdf" in names
     assert "documents/processed/source.md" in names
@@ -89,8 +101,10 @@ async def test_export_account_data_returns_zip_bundle(main_module):
 
     profile = json.loads(archive.read("account/profile.json").decode("utf-8"))
     tags = json.loads(archive.read("workspace/tags.json").decode("utf-8"))
+    study_sets = json.loads(archive.read("workspace/study_sets.json").decode("utf-8"))
     assert profile["username"] == "alice"
     assert tags == ["AI"]
+    assert study_sets[0]["title"] == "Chapter Cards"
 
 
 @pytest.mark.asyncio
@@ -385,6 +399,61 @@ async def test_generate_flashcards_returns_payload(main_module):
     )
 
     assert response["title"] == "Flashcards"
+
+
+@pytest.mark.asyncio
+async def test_generate_study_set_auto_saves_payload(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    main_module.vector_store.get_document_metadata.return_value = {
+        "filename": "source.pdf",
+        "owner_username": "alice",
+        "processed_path": "/tmp/source.pdf.md",
+    }
+    main_module.study_set_generator.generate_study_set.return_value = {
+        "title": "Mixed Practice",
+        "items": [{"id": 1, "type": "written", "prompt": "Explain X", "model_answer": "X", "rubric": "Mention X"}],
+    }
+
+    response = await main_module.generate_study_set(
+        main_module.StudySetGenerateRequest(filename="source.pdf", type="mixed_practice", num_items=3),
+        current_user=user(),
+    )
+
+    assert response["title"] == "Mixed Practice"
+    assert response["type"] == "mixed_practice"
+    assert response["source_filename"] == "source.pdf"
+    assert main_module.app.state.db.list_study_sets("alice")[0]["id"] == response["id"]
+
+
+@pytest.mark.asyncio
+async def test_saved_study_sets_are_scoped_and_deletable(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    main_module.app.state.db.create_user("bob", "hash", "salt")
+    study_set = main_module.app.state.db.create_study_set(
+        "alice",
+        {
+            "type": "mcq_quiz",
+            "title": "Alice Quiz",
+            "source_filename": "alice.pdf",
+            "items": [{"id": 1, "type": "mcq", "question": "Q?", "options": ["A"], "correct_answer": "A"}],
+            "model": "gemini-test",
+            "difficulty": "Medium",
+        },
+    )
+
+    alice_list = await main_module.list_study_sets(current_user=user("alice"))
+    bob_list = await main_module.list_study_sets(current_user=user("bob"))
+
+    assert alice_list["study_sets"][0]["id"] == study_set["id"]
+    assert bob_list["study_sets"] == []
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main_module.get_study_set(study_set["id"], current_user=user("bob"))
+    assert exc_info.value.status_code == 404
+
+    delete_response = await main_module.delete_study_set(study_set["id"], current_user=user("alice"))
+    assert delete_response == {"message": "Study set deleted successfully"}
+    assert main_module.app.state.db.list_study_sets("alice") == []
 
 
 @pytest.mark.asyncio

@@ -55,6 +55,7 @@ from app.db.vector_store import VectorStore
 from app.core.rag import RAGChat
 from app.core.quiz_generator import QuizGenerator
 from app.core.flashcard_generator import FlashcardGenerator
+from app.core.study_set_generator import ALLOWED_STUDY_SET_TYPES, StudySetGenerator
 from app.core.metadata_extractor import MetadataExtractor
 from app.core.topic_miner import TopicMiner
 from app.db.mongo import MongoDatabase
@@ -75,6 +76,7 @@ vector_store = VectorStore()
 rag_chat = RAGChat(vector_store, GEMINI_API_KEY)
 quiz_generator = QuizGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 flashcard_generator = FlashcardGenerator(PROCESSED_DIR, GEMINI_API_KEY)
+study_set_generator = StudySetGenerator(PROCESSED_DIR, GEMINI_API_KEY)
 metadata_extractor = MetadataExtractor(GEMINI_API_KEY)
 topic_miner = TopicMiner(doc_processor, GEMINI_API_KEY)
 db: Optional[DatabaseRepository] = None
@@ -860,6 +862,13 @@ class FlashcardRequest(BaseModel):
     num_cards: int = 10
 
 
+class StudySetGenerateRequest(BaseModel):
+    filename: str
+    type: str
+    num_items: int = 10
+    difficulty: str = "Medium"
+
+
 class DeleteAccountRequest(BaseModel):
     username: str
     password: str
@@ -951,6 +960,36 @@ def _write_json_to_zip(archive: ZipFile, archive_path: str, payload: Any) -> Non
     )
 
 
+def _normalize_study_set_type(study_type: str) -> str:
+    normalized = (study_type or "").strip().lower()
+    if normalized not in ALLOWED_STUDY_SET_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported study set type")
+    return normalized
+
+
+def _build_study_set_record(
+    generated: Dict[str, Any],
+    *,
+    study_type: str,
+    source_filename: str,
+    difficulty: str,
+    model: str,
+) -> Dict[str, Any]:
+    items = generated.get("items", [])
+    if not isinstance(items, list) or not items:
+        raise ValueError("Generated study set did not include items")
+
+    return {
+        "type": study_type,
+        "title": generated.get("title") or "Study Set",
+        "source_filename": source_filename,
+        "items": items,
+        "model": model,
+        "difficulty": difficulty,
+        "item_count": len(items),
+    }
+
+
 def _add_directory_to_zip(archive: ZipFile, root_path: Path, archive_root: str) -> None:
     if not root_path.exists() or not root_path.is_dir():
         return
@@ -1003,6 +1042,7 @@ def _build_account_export(username: str) -> bytes:
         )
         _write_json_to_zip(archive, "workspace/document_metadata.json", scrubbed_user.get("documents", {}))
         _write_json_to_zip(archive, "workspace/exam_documents.json", scrubbed_user.get("exam_documents", {}))
+        _write_json_to_zip(archive, "workspace/study_sets.json", scrubbed_user.get("study_sets", []))
         _write_json_to_zip(
             archive,
             "workspace/vector_documents.json",
@@ -1571,6 +1611,67 @@ async def delete_note(note_id: str, current_user: AuthenticatedUser = Depends(ge
     if _database().delete_note(current_user.username, note_id):
         return {"message": "Note deleted successfully"}
     raise HTTPException(status_code=404, detail="Note not found")
+
+
+@app.post("/study-sets/generate")
+async def generate_study_set(
+    request: StudySetGenerateRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Generate and auto-save a study set from a document"""
+    try:
+        study_type = _normalize_study_set_type(request.type)
+        metadata = _get_owned_document_metadata(current_user.username, request.filename)
+        generated = await asyncio.to_thread(
+            study_set_generator.generate_study_set,
+            request.filename,
+            study_type,
+            request.num_items,
+            request.difficulty,
+            Path(metadata["processed_path"]),
+        )
+        study_set = _database().create_study_set(
+            current_user.username,
+            _build_study_set_record(
+                generated,
+                study_type=study_type,
+                source_filename=request.filename,
+                difficulty=request.difficulty,
+                model=study_set_generator.model_id,
+            ),
+        )
+        return study_set
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Document not found or not processed yet")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating study set: {str(e)}")
+
+
+@app.get("/study-sets")
+async def list_study_sets(current_user: AuthenticatedUser = Depends(get_current_user)):
+    """List saved study sets"""
+    return {"study_sets": _database().list_study_sets(current_user.username)}
+
+
+@app.get("/study-sets/{study_set_id}")
+async def get_study_set(study_set_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Get a saved study set"""
+    study_set = _database().get_study_set(current_user.username, study_set_id)
+    if not study_set:
+        raise HTTPException(status_code=404, detail="Study set not found")
+    return study_set
+
+
+@app.delete("/study-sets/{study_set_id}")
+async def delete_study_set(study_set_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+    """Delete a saved study set"""
+    if _database().delete_study_set(current_user.username, study_set_id):
+        return {"message": "Study set deleted successfully"}
+    raise HTTPException(status_code=404, detail="Study set not found")
 
 
 @app.post("/quiz/generate")
