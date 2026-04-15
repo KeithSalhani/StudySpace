@@ -24,6 +24,19 @@ function request(path, options = {}) {
   }).then(parseResponse);
 }
 
+async function requestBlob(path, options = {}) {
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    ...options
+  });
+
+  if (!response.ok) {
+    await parseResponse(response);
+  }
+
+  return response.blob();
+}
+
 export function getCurrentUser() {
   return request("/auth/me");
 }
@@ -51,6 +64,20 @@ export function signIn(username, password) {
 export function signOut() {
   return request("/auth/logout", {
     method: "POST"
+  });
+}
+
+export function exportAccountData() {
+  return requestBlob("/account/export");
+}
+
+export function deleteAccount(username, password) {
+  return request("/account", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ username, password })
   });
 }
 

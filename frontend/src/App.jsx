@@ -8,7 +8,9 @@ import AuthScreen from "./AuthScreen";
 import {
   createNote,
   createTag,
+  deleteAccount,
   deleteDocument,
+  exportAccountData,
   generateFlashcards,
   generateQuiz,
   getCurrentUser,
@@ -47,6 +49,8 @@ const starterQuestions = [
   "Create an exam prep checklist.",
   "Explain the difficult concepts."
 ];
+
+const PRIVACY_CONTACT_EMAIL = "gdpr@studyspace.ie";
 
 function getAccessibilitySettings() {
   if (typeof window === "undefined") {
@@ -842,6 +846,9 @@ function SidebarToggle({ side, open, onClick, mobile = false, label }) {
 
 function SettingsModal({
   onClose,
+  onOpenPrivacyNotice,
+  onExportAccount,
+  onDeleteAccount,
   tags,
   tagDraft,
   onTagDraftChange,
@@ -849,7 +856,12 @@ function SettingsModal({
   onDeleteTag,
   accessibility,
   onToggleAccessibility,
-  voiceInputStatus
+  voiceInputStatus,
+  currentUsername,
+  exportBusy,
+  deleteBusy,
+  deleteState,
+  onDeleteStateChange
 }) {
   const dialogRef = useDialog(true, onClose);
 
@@ -1008,20 +1020,172 @@ function SettingsModal({
             </div>
           </section>
 
-          <section className="section" style={{ marginTop: '32px', opacity: 0.6 }}>
+          <section className="section" style={{ marginTop: "32px" }}>
             <div className="section-head">
-              <div className="section-title">Workspace Sections</div>
-              <div className="micro-pill">Coming soon</div>
+              <div className="section-title">Privacy & GDPR</div>
+              <div className="helper-text">Your rights</div>
             </div>
-            <p className="meta-text">
-              Custom layout sections for your sidebar.
+            <p className="meta-text" style={{ marginBottom: "16px" }}>
+              Review the privacy notice, export your data, or permanently delete your account.
             </p>
+            <div className="settings-card-stack">
+              <div className="settings-action-card">
+                <div>
+                  <div className="settings-toggle-title">Privacy Notice</div>
+                  <div className="meta-text">
+                    Read what Study Space stores, how it is used, and how to contact{" "}
+                    <a href={`mailto:${PRIVACY_CONTACT_EMAIL}`}>{PRIVACY_CONTACT_EMAIL}</a>.
+                  </div>
+                </div>
+                <button className="small-button" type="button" onClick={onOpenPrivacyNotice}>
+                  Open notice
+                </button>
+              </div>
+
+              <div className="settings-action-card">
+                <div>
+                  <div className="settings-toggle-title">Export account data</div>
+                  <div className="meta-text">
+                    Download your account data, uploaded files, processed files, notes, folders, and related metadata as a ZIP.
+                  </div>
+                </div>
+                <button className="small-button primary" type="button" onClick={() => void onExportAccount()} disabled={exportBusy}>
+                  {exportBusy ? "Preparing..." : "Export my data"}
+                </button>
+              </div>
+
+              <div className="settings-danger-card">
+                <div>
+                  <div className="settings-toggle-title">Delete account</div>
+                  <div className="meta-text">
+                    Permanently remove <strong>@{currentUsername}</strong> and all associated files, metadata, and notes. This cannot be undone.
+                  </div>
+                </div>
+                <div className="settings-delete-grid">
+                  <label className="auth-field">
+                    <span>Confirm username</span>
+                    <input
+                      className="input"
+                      value={deleteState.username}
+                      onChange={(event) => onDeleteStateChange("username", event.currentTarget.value)}
+                      placeholder={currentUsername}
+                    />
+                  </label>
+                  <label className="auth-field">
+                    <span>Password</span>
+                    <input
+                      className="input"
+                      type="password"
+                      value={deleteState.password}
+                      onChange={(event) => onDeleteStateChange("password", event.currentTarget.value)}
+                      placeholder="Current password"
+                    />
+                  </label>
+                </div>
+                <div className="meta-text">
+                  If you need help with a GDPR request, contact{" "}
+                  <a href={`mailto:${PRIVACY_CONTACT_EMAIL}`}>{PRIVACY_CONTACT_EMAIL}</a>.
+                </div>
+                <div className="settings-danger-actions">
+                  <button
+                    className="small-button danger-button"
+                    type="button"
+                    onClick={() => void onDeleteAccount()}
+                    disabled={deleteBusy || !deleteState.username.trim() || !deleteState.password}
+                  >
+                    {deleteBusy ? "Deleting..." : "Delete account"}
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         </div>
         <div className="modal-footer" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
           <button className="small-button primary" onClick={onClose}>Done</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PrivacyNoticeScreen({ authenticated, username, onClose }) {
+  return (
+    <div className="auth-shell privacy-shell">
+      <div className="app-noise" />
+      <div className="orb orb-one" />
+      <div className="orb orb-two" />
+      <div className="orb orb-three" />
+      <section className="privacy-panel glass-panel">
+        <div className="privacy-header">
+          <div>
+            <div className="auth-kicker">Legal</div>
+            <h1>Privacy Notice</h1>
+            <p className="auth-copy">
+              This notice explains what Study Space stores, how it uses that data, and how you can exercise your GDPR rights.
+            </p>
+          </div>
+          <button className="small-button" type="button" onClick={onClose}>
+            {authenticated ? "Back to workspace" : "Back"}
+          </button>
+        </div>
+
+        <div className="privacy-grid">
+          <section className="privacy-section">
+            <h2>Who controls your data</h2>
+            <p>
+              Study Space is operated by Keith Salhani. For privacy questions or GDPR requests, contact{" "}
+              <a href={`mailto:${PRIVACY_CONTACT_EMAIL}`}>{PRIVACY_CONTACT_EMAIL}</a>.
+            </p>
+          </section>
+          <section className="privacy-section">
+            <h2>Data collected</h2>
+            <p>
+              Study Space stores your username, password hash and salt, session records, uploaded study files, processed document text,
+              notes, tags, folders, exam papers, exam folder analyses, and document metadata used by search and study features.
+            </p>
+          </section>
+          <section className="privacy-section">
+            <h2>How your data is used</h2>
+            <p>
+              Data is used to authenticate your account, organize study material, provide chat, quizzes, flashcards, topic mining, and
+              keep your workspace available across sessions.
+            </p>
+          </section>
+          <section className="privacy-section">
+            <h2>AI processing</h2>
+            <p>
+              When you use AI-powered features, relevant study content may be sent to the configured AI provider for processing. Search
+              embeddings and retrieval data are stored locally by the app.
+            </p>
+          </section>
+          <section className="privacy-section">
+            <h2>Retention and local storage</h2>
+            <p>
+              Account data remains until you delete content or delete the account. Session records expire automatically. Theme and
+              accessibility preferences are stored in your browser.
+            </p>
+          </section>
+          <section className="privacy-section">
+            <h2>Your rights</h2>
+            <p>
+              You can export your data, delete your account, and contact{" "}
+              <a href={`mailto:${PRIVACY_CONTACT_EMAIL}`}>{PRIVACY_CONTACT_EMAIL}</a> to request correction or raise a privacy issue.
+              {authenticated ? ` You are currently signed in as @${username}.` : ""}
+            </p>
+          </section>
+        </div>
+
+        {!authenticated ? (
+          <div className="privacy-actions">
+            <button className="small-button primary" type="button" onClick={() => { window.location.hash = "login"; }}>
+              Sign in
+            </button>
+            <button className="small-button" type="button" onClick={() => { window.location.hash = "signup"; }}>
+              Create account
+            </button>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
@@ -1036,6 +1200,7 @@ export default function App() {
   
   // Set initial auth mode based on hash
   const initialHash = window.location.hash;
+  const [currentHash, setCurrentHash] = useState(initialHash);
   const [authMode, setAuthMode] = useState(initialHash === "#signup" ? "signup" : "signin");
   
   const [authForm, setAuthForm] = useState({ username: "", password: "" });
@@ -1045,6 +1210,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
+      setCurrentHash(hash);
       if (hash === "#login") {
         setShowLanding(false);
         setAuthMode("signin");
@@ -1052,6 +1218,9 @@ export default function App() {
       } else if (hash === "#signup") {
         setShowLanding(false);
         setAuthMode("signup");
+        setAuthError("");
+      } else if (hash === "#privacy") {
+        setShowLanding(false);
         setAuthError("");
       } else if (hash === "" || hash === "#") {
         setShowLanding(true);
@@ -1099,6 +1268,9 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState("chat");
   const [viewMode, setViewMode] = useState("workspace");
   const [showSettings, setShowSettings] = useState(false);
+  const [accountExportBusy, setAccountExportBusy] = useState(false);
+  const [accountDeleteBusy, setAccountDeleteBusy] = useState(false);
+  const [accountDeleteForm, setAccountDeleteForm] = useState({ username: "", password: "" });
   const [accessibility, setAccessibility] = useState(getAccessibilitySettings);
   const [liveRegionMessage, setLiveRegionMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -1160,6 +1332,10 @@ export default function App() {
       answers: {}
     });
     seenCompletedJobsRef.current = new Set();
+    setShowSettings(false);
+    setAccountDeleteBusy(false);
+    setAccountExportBusy(false);
+    setAccountDeleteForm({ username: "", password: "" });
   }
 
   function handleUnauthorized() {
@@ -1834,6 +2010,79 @@ export default function App() {
     setAuthStatus("anonymous");
   }
 
+  async function handleExportAccount() {
+    if (accountExportBusy) {
+      return;
+    }
+
+    try {
+      setAccountExportBusy(true);
+      const blob = await exportAccountData();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `studyspace-export-${currentUser?.username || "account"}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      announce("Your account export has started downloading.");
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      showError(error.message);
+    } finally {
+      setAccountExportBusy(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    const username = accountDeleteForm.username.trim();
+    const password = accountDeleteForm.password;
+
+    if (!username || !password || accountDeleteBusy) {
+      return;
+    }
+
+    if (!window.confirm("Delete your account permanently? This removes your files, notes, and metadata immediately.")) {
+      return;
+    }
+
+    try {
+      setAccountDeleteBusy(true);
+      await deleteAccount(username, password);
+      resetWorkspaceState();
+      setCurrentUser(null);
+      setAuthForm({ username: "", password: "" });
+      setAuthError("");
+      setAuthStatus("anonymous");
+      window.location.hash = "login";
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      showError(error.message);
+    } finally {
+      setAccountDeleteBusy(false);
+    }
+  }
+
+  function openPrivacyNotice() {
+    setShowSettings(false);
+    window.location.hash = "privacy";
+  }
+
+  function closePrivacyNotice() {
+    if (authStatus === "authenticated") {
+      window.location.hash = "";
+      return;
+    }
+    window.location.hash = authMode === "signup" ? "signup" : "login";
+  }
+
   const visibleUploadJobs = uploadJobs.filter((job) => {
     const isFinished = job.status === "completed" || job.status === "failed";
     if (!isFinished) {
@@ -2246,6 +2495,16 @@ export default function App() {
     );
   }
 
+  if (currentHash === "#privacy") {
+    return (
+      <PrivacyNoticeScreen
+        authenticated={authStatus === "authenticated"}
+        username={currentUser?.username}
+        onClose={closePrivacyNotice}
+      />
+    );
+  }
+
   if (authStatus === "loading") {
     return (
       <div className="auth-shell auth-loading-shell">
@@ -2285,6 +2544,7 @@ export default function App() {
           setAuthError("");
           window.location.hash = authMode === "signin" ? "signup" : "login";
         }}
+        onOpenPrivacyNotice={openPrivacyNotice}
       />
     );
   }
@@ -2700,6 +2960,9 @@ export default function App() {
       {showSettings ? (
         <SettingsModal
           onClose={() => setShowSettings(false)}
+          onOpenPrivacyNotice={openPrivacyNotice}
+          onExportAccount={handleExportAccount}
+          onDeleteAccount={handleDeleteAccount}
           tags={tags}
           tagDraft={tagDraft}
           onTagDraftChange={(val) => setTagDraft(val)}
@@ -2708,6 +2971,13 @@ export default function App() {
           accessibility={accessibility}
           onToggleAccessibility={handleToggleAccessibility}
           voiceInputStatus={voiceInputStatus}
+          currentUsername={currentUser?.username || ""}
+          exportBusy={accountExportBusy}
+          deleteBusy={accountDeleteBusy}
+          deleteState={accountDeleteForm}
+          onDeleteStateChange={(field, value) => {
+            setAccountDeleteForm((prev) => ({ ...prev, [field]: value }));
+          }}
         />
       ) : null}
 

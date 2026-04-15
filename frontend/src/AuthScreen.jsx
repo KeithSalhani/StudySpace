@@ -7,7 +7,8 @@ export default function AuthScreen({
   error,
   onChange,
   onSubmit,
-  onToggleMode
+  onToggleMode,
+  onOpenPrivacyNotice
 }) {
   const isSignUp = mode === "signup";
 
@@ -68,6 +69,13 @@ export default function AuthScreen({
                 <button className="small-button text-button" type="button" onClick={onToggleMode} disabled={busy}>
                   {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
                 </button>
+              </div>
+              <div className="auth-legal">
+                By continuing, you agree to the handling of your account and study data described in the{" "}
+                <button className="text-link-button" type="button" onClick={onOpenPrivacyNotice}>
+                  Privacy Notice
+                </button>
+                .
               </div>
             </form>
           </div>
