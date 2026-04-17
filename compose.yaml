@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     environment:
       MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME:-studyspace}
+    ports:
+      - "${MONGODB_HOST_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:

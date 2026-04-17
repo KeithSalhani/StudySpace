@@ -37,6 +37,7 @@ report/final-report
 /report/
 .local
 docs
+Auto Run Docs/
 prs
 .codex
 .coverage
