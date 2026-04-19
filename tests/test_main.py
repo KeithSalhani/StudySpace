@@ -1,3 +1,4 @@
+import importlib
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -38,6 +39,7 @@ def test_ensure_selected_files_owned_returns_owned_files(main_module):
 
 
 def test_upload_job_manager_processes_document_successfully(main_module, tmp_path, monkeypatch):
+    jobs_service = importlib.import_module("app.services.jobs")
     processor = MagicMock()
     processor.process_document.return_value = "# Notes"
     processor.classify_content_full.return_value = {
@@ -53,7 +55,7 @@ def test_upload_job_manager_processes_document_successfully(main_module, tmp_pat
 
     processed_dir = tmp_path / "processed"
     processed_dir.mkdir()
-    monkeypatch.setattr(main_module, "_user_processed_dir", lambda username: processed_dir)
+    monkeypatch.setattr(jobs_service, "user_processed_dir", lambda username: processed_dir)
 
     upload_path = tmp_path / "upload.pdf"
     upload_path.write_text("binary placeholder", encoding="utf-8")

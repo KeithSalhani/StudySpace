@@ -13,7 +13,15 @@ from app.db.metadata import JSONDatabase
 def main_module(monkeypatch, tmp_path):
     monkeypatch.setenv("GEMINI_API_KEY", "test_key")
 
-    sys.modules.pop("app.main", None)
+    for module_name in list(sys.modules):
+        if (
+            module_name == "app.main"
+            or module_name == "app.api"
+            or module_name.startswith("app.api.")
+            or module_name == "app.services"
+            or module_name.startswith("app.services.")
+        ):
+            sys.modules.pop(module_name, None)
 
     doc_processor = MagicMock(name="doc_processor")
     vector_store = MagicMock(name="vector_store")
@@ -70,12 +78,17 @@ def main_module(monkeypatch, tmp_path):
 
     imported.USERS_DIR = tmp_path / "users"
     imported.USERS_DIR.mkdir(parents=True, exist_ok=True)
+    storage_module = importlib.import_module("app.services.storage")
+    storage_module.USERS_DIR = imported.USERS_DIR
 
     test_db = JSONDatabase(str(tmp_path / "test_db.json"))
     imported.db = test_db
     imported.app.state.db = test_db
+    imported.app.state.services = imported.services
     imported.upload_jobs.database = test_db
     imported.topic_mining_jobs.database = test_db
+    deps_module = importlib.import_module("app.api.deps")
+    deps_module.set_runtime_context(test_db, imported.services)
 
     yield imported
 
