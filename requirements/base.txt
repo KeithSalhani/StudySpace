@@ -12,5 +12,6 @@ jinja2
 aiofiles
 python-dotenv
 pytest
+coverage
 httpx
 pytest-asyncio

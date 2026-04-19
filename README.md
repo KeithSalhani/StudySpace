@@ -228,7 +228,24 @@ Run coverage:
 MongoDB integration tests require `MONGODB_TEST_URI`:
 
 ```bash
-./.venv/bin/python -m pytest tests/test_mongo_db.py
+MONGODB_TEST_URI="mongodb://localhost:27017" ./.venv/bin/python -m pytest tests/test_mongo_db.py
+```
+
+Run the frontend Playwright E2E suite:
+
+```bash
+cd frontend
+npm run test:e2e
+```
+
+The Playwright suite starts a local Vite server and exercises mocked browser flows under `frontend/e2e/`, so it does not require the full backend stack for the covered UI journeys.
+
+Available E2E scripts:
+
+```bash
+cd frontend
+npm run test:e2e
+npm run test:e2e:headed
 ```
 
 For a fuller breakdown of the test suite, see [README_TESTS.md](README_TESTS.md).

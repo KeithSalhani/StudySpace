@@ -1,88 +1,147 @@
-# StudySpace Testing Guide
+# Study Space Testing Guide
 
-This document outlines the testing infrastructure for the StudySpace project. The project uses `pytest` for unit and integration testing, and `coverage.py` for line coverage reporting.
+This repository uses:
 
-## Test Structure
+- `pytest` for backend and unit/integration tests
+- `coverage.py` for Python line coverage
+- Playwright for frontend browser E2E coverage
 
-The tests are located in the `tests/` directory and mirror the application structure:
+The authoritative local Python environment is `./.venv`.
 
-- `tests/test_document_processor.py`: Tests for document ingestion, text extraction, and classification integration.
-- `tests/test_classification.py`: Tests for the zero-shot classification logic and text truncation.
-- `tests/test_vector_store.py`: Tests for the ChromaDB integration, embedding generation, and document chunking.
-- `tests/test_rag_chat.py`: Tests for the RAG pipeline, prompt engineering, and LLM interaction (mocked).
-- `tests/test_db.py`: Tests for the JSON database (tags and notes management).
+## Setup
 
-## Running Tests
-
-### Prerequisites
-
-Ensure you have the required test dependencies installed (these are in addition to the main `requirements.txt`):
+From the project root:
 
 ```bash
-pip install pytest coverage
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Execution
+That install now includes the test runner and coverage tooling.
 
-To run the full test suite, execute the following command from the project root:
+## Run The Suite
+
+Run the full test suite:
 
 ```bash
-./venv/bin/python -m pytest tests
+./.venv/bin/python -m pytest tests
 ```
 
-*Note: Using `python -m pytest` ensures that the current directory is added to the Python path, preventing import errors.*
-
-### Coverage
-
-To measure application coverage only, run:
+Run a single test file:
 
 ```bash
-./venv/bin/python -m coverage erase
-./venv/bin/python -m coverage run --source=app -m pytest tests
-./venv/bin/python -m coverage report -m
+./.venv/bin/python -m pytest tests/test_api.py
 ```
 
-Why `--source=app` matters:
+Run a single test case:
 
-- It limits coverage reporting to the project application code.
-- It avoids report failures caused by synthetic or dependency-generated modules that do not exist as normal source files.
+```bash
+./.venv/bin/python -m pytest tests/test_auth.py -k login
+```
 
-## Test Descriptions
+Using `python -m pytest` keeps imports aligned with the active project interpreter.
 
-### 1. Document Processor (`test_document_processor.py`)
-Verifies that:
-- Documents are correctly processed using `MarkItDown`.
-- Text files are read correctly.
-- The classifier is correctly invoked with the extracted text.
-- Error handling works for missing files.
+## Frontend E2E
 
-### 2. Classification (`test_classification.py`)
-Verifies that:
-- The `Classifier` class correctly interfaces with the Hugging Face pipeline.
-- Text inputs longer than the model's limit are safely truncated.
-- Classification results are returned in the expected format.
+Frontend E2E coverage lives in `frontend/e2e/` and uses Playwright.
 
-### 3. Vector Store (`test_vector_store.py`)
-Verifies that:
-- Documents are properly split into chunks (sliding window).
-- Embeddings are generated (mocked).
-- Documents are added to and deleted from ChromaDB.
-- Search queries return the expected results structure.
+Run the browser suite:
 
-### 4. RAG Chat (`test_rag_chat.py`)
-Verifies that:
-- The chat engine correctly retrieves context from the vector store.
-- Prompts are constructed correctly (with and without context).
-- The LLM response is processed and returned with citations.
-- Empty responses from the LLM are handled gracefully.
+```bash
+cd frontend
+npm run test:e2e
+```
 
-### 5. Database (`test_db.py`)
-Verifies that:
-- The JSON database file is created if it doesn't exist.
-- Tags can be added, retrieved, and deleted.
-- Notes can be created, stored, and removed.
-- Duplicate tags are prevented.
+Run it headed for debugging:
 
-## Continuous Integration
+```bash
+cd frontend
+npm run test:e2e:headed
+```
 
-These tests should be run before any commit to ensure no regressions are introduced.
+The Playwright setup:
+
+- starts a local Vite dev server automatically
+- uses mocked same-origin API responses for the covered flows
+- keeps the E2E suite deterministic without requiring the full backend stack
+
+Current browser flows include:
+
+- authentication sign-in/sign-out
+- chat submission against selected documents
+- saved study-set generation flow
+- document upload and delete flow
+- topic tag creation and deletion
+- note creation and deletion
+- accessibility settings toggles
+
+## Coverage
+
+Measure coverage for application code under `app/`:
+
+```bash
+./.venv/bin/python -m coverage erase
+./.venv/bin/python -m coverage run --source=app -m pytest tests
+./.venv/bin/python -m coverage report -m
+```
+
+Why `--source=app` is used:
+
+- It reports coverage for the application code rather than tests or site-packages.
+- It keeps the total percentage focused on the shipped backend code.
+
+## Test Inventory
+
+The current suite covers these main areas:
+
+- `tests/test_api.py`: API-level behavior for backend endpoints and study workflows.
+- `tests/test_auth.py`: authentication and validation behavior.
+- `tests/test_classification.py`: document classification helpers.
+- `tests/test_db.py`: database-facing behavior outside Mongo integration tests.
+- `tests/test_demo.py`: demo-oriented RAG behavior.
+- `tests/test_document_processor.py`: ingestion and document processing behavior.
+- `tests/test_flashcard_generator.py`: flashcard generation logic.
+- `tests/test_main.py`: FastAPI app entrypoint behavior.
+- `tests/test_metadata_extractor.py`: metadata extraction flows.
+- `tests/test_mongo_db.py`: MongoDB integration coverage.
+- `tests/test_quiz_generator.py`: quiz generation logic.
+- `tests/test_rag_chat.py`: RAG orchestration and response handling.
+- `tests/test_study_set_generator.py`: saved study-set generation and normalization behavior.
+- `tests/test_topic_miner.py`: topic miner normalization, fallback, and analysis helper behavior.
+- `tests/test_vector_store.py`: vector store indexing and retrieval behavior.
+- `tests/test_workspace_catalog.py`: workspace catalog construction and filtering.
+
+Shared fixtures and test helpers live in `tests/conftest.py`.
+
+Playwright E2E specs:
+
+- `frontend/e2e/auth.spec.js`: sign-in and logout flow.
+- `frontend/e2e/chat.spec.js`: chat interaction flow with grounded response rendering.
+- `frontend/e2e/study-sets.spec.js`: study-set generation and practice modal flow.
+- `frontend/e2e/workspace-management.spec.js`: upload/delete, tags, notes, and accessibility settings flows.
+
+## Environment Notes
+
+- Most tests are designed to run locally with the Python dependencies from `requirements.txt`.
+- Mongo integration tests in `tests/test_mongo_db.py` require `MONGODB_TEST_URI`.
+- Some features in the application depend on services or secrets such as MongoDB and `GEMINI_API_KEY`, but much of the suite uses mocks so the full app stack is not required for every test file.
+
+Example Mongo test run:
+
+```bash
+MONGODB_TEST_URI="mongodb://localhost:27017" ./.venv/bin/python -m pytest tests/test_mongo_db.py
+```
+
+## Practical Workflow
+
+For normal development, this is the useful minimum:
+
+```bash
+./.venv/bin/python -m pytest tests
+./.venv/bin/python -m coverage run --source=app -m pytest tests
+./.venv/bin/python -m coverage report -m
+cd frontend && npm run test:e2e
+```
+
+If coverage or test collection fails immediately, verify that you are using `./.venv/bin/python` and that `pip install -r requirements.txt` completed successfully in that same environment.
