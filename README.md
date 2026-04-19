@@ -92,14 +92,14 @@ That gives the app an **agentic-style planning step** while keeping execution co
 
 | Layer | Implementation |
 | --- | --- |
-| **Frontend** | React 18 + Vite, built into backend-served static assets |
-| **Backend** | FastAPI application in `app/main.py` |
-| **Structured data** | MongoDB via `app/db/mongo.py` |
-| **Vector retrieval** | ChromaDB via `app/db/vector_store.py` |
+| **Frontend** | React 18 + Vite app under `frontend/src/app`, built into backend-served static assets |
+| **API assembly** | FastAPI entrypoint in `app/main.py` with router registration from `app/api/routers` |
+| **Service wiring** | Runtime dependencies and shared services in `app/api/deps.py` and `app/services/` |
+| **Domain logic** | Retrieval, ingestion, metadata extraction, study generation, and topic mining in `app/core/` |
+| **Structured data** | MongoDB access via `app/db/mongo.py` and `app/db/repository.py` |
+| **Vector retrieval** | ChromaDB indexing and search via `app/db/vector_store.py` |
 | **Embeddings** | `all-MiniLM-L6-v2` via `sentence-transformers` |
 | **Primary LLM** | Google Gemini via `google-genai` |
-| **Document ingestion** | `app/core/ingestion.py` with Docling-based processing |
-| **Topic analysis** | `app/core/topic_miner.py` |
 
 ### Model stack
 
@@ -184,7 +184,7 @@ docker compose up --build
 
 That starts:
 
-- `app` on `http://127.0.0.1:8000`
+- `app` on `http://127.0.0.1:8001` by default (`HOST_PORT` in `compose.yaml`)
 - `mongo` as the internal database service
 
 Persistent data is stored in named volumes for:
@@ -265,23 +265,48 @@ Topic Miner is a separate exam-analysis workspace. Its flow is:
 
 ```text
 app/
-  main.py                 FastAPI entry point and API routes
+  main.py                 FastAPI entry point and application assembly
   auth.py                 Session auth and password hashing
+  config.py               Environment-driven app configuration
+  api/
+    deps.py               Shared dependency wiring and runtime context
+    schemas.py            Request/response models
+    routers/              Auth, chat, documents, exams, study, uploads, UI, account
   core/
     ingestion.py          Document processing and extraction
     rag.py                Retrieval-planned RAG orchestration
+    metadata_extractor.py Academic metadata extraction
     study_set_generator.py Saved flashcard, MCQ, written, and mixed practice generation
     topic_miner.py        Exam-paper analysis
+    workspace_catalog.py  Workspace inventory used by retrieval planning
+  services/
+    jobs.py               Background upload and topic-mining job management
+    ownership.py          User-scoped access validation helpers
+    storage.py            User file storage paths and persistence helpers
   db/
+    repository.py         Database interface used across the app
     mongo.py              MongoDB integration
+    metadata.py           Metadata persistence helpers
     vector_store.py       ChromaDB indexing and search
 frontend/
-  src/                    React application
+  src/
+    app/                  Modular React app
+      components/         Chat, layout, modal, and accessibility UI pieces
+      hooks/              Shared React hooks
+      screens/            Standalone screens
+      sections/           Workspace and studio section composition
+  e2e/                    Playwright end-to-end suite with mocked API flows
+requirements/
+  base.txt                Shared Python dependencies
+  cpu.txt                 CPU runtime dependencies
+  gpu.txt                 Optional GPU runtime dependencies
 assets/
   studyspace_banner.png   README hero banner
-report/
-  studyspace.png          Workspace preview and supporting diagrams
-tests/                    Backend test suite
+  preview.png             Workspace preview image
+tests/                    Backend pytest suite
+  conftest.py             Shared fixtures and test helpers
+compose.yaml              Local Mongo + app compose stack
+Dockerfile                Multi-stage frontend/backend image build
 ```
 
 ## API Overview

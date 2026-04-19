@@ -93,33 +93,53 @@ Why `--source=app` is used:
 
 ## Test Inventory
 
-The current suite covers these main areas:
+The current suite is split across the current modular codebase:
+
+### API and app wiring
 
 - `tests/test_api.py`: API-level behavior for backend endpoints and study workflows.
 - `tests/test_auth.py`: authentication and validation behavior.
+- `tests/test_main.py`: FastAPI app entrypoint behavior and app wiring.
+
+These map most directly to the assembled FastAPI app in `app/main.py` and the routed HTTP layer in `app/api/routers/`.
+
+### Core logic and services
+
 - `tests/test_classification.py`: document classification helpers.
-- `tests/test_db.py`: database-facing behavior outside Mongo integration tests.
 - `tests/test_demo.py`: demo-oriented RAG behavior.
 - `tests/test_document_processor.py`: ingestion and document processing behavior.
 - `tests/test_flashcard_generator.py`: flashcard generation logic.
-- `tests/test_main.py`: FastAPI app entrypoint behavior.
 - `tests/test_metadata_extractor.py`: metadata extraction flows.
-- `tests/test_mongo_db.py`: MongoDB integration coverage.
 - `tests/test_quiz_generator.py`: quiz generation logic.
 - `tests/test_rag_chat.py`: RAG orchestration and response handling.
 - `tests/test_study_set_generator.py`: saved study-set generation and normalization behavior.
 - `tests/test_topic_miner.py`: topic miner normalization, fallback, and analysis helper behavior.
-- `tests/test_vector_store.py`: vector store indexing and retrieval behavior.
 - `tests/test_workspace_catalog.py`: workspace catalog construction and filtering.
+
+These primarily cover the modular backend logic under `app/core/` and the supporting service behavior those flows depend on.
+
+### Persistence and integration
+
+- `tests/test_db.py`: database-facing behavior outside Mongo integration tests.
+- `tests/test_mongo_db.py`: MongoDB integration coverage.
+- `tests/test_vector_store.py`: vector store indexing and retrieval behavior.
+
+These cover the persistence layer under `app/db/`, including Mongo-backed records and Chroma retrieval behavior.
 
 Shared fixtures and test helpers live in `tests/conftest.py`.
 
-Playwright E2E specs:
+### Frontend E2E
+
+Frontend browser coverage lives under `frontend/e2e/` and exercises the modular React app in `frontend/src/app/`.
+
+Playwright specs:
 
 - `frontend/e2e/auth.spec.js`: sign-in and logout flow.
 - `frontend/e2e/chat.spec.js`: chat interaction flow with grounded response rendering.
 - `frontend/e2e/study-sets.spec.js`: study-set generation and practice modal flow.
 - `frontend/e2e/workspace-management.spec.js`: upload/delete, tags, notes, and accessibility settings flows.
+
+Mocked API responses for these flows live in `frontend/e2e/support/mockApi.js`.
 
 ## Environment Notes
 
