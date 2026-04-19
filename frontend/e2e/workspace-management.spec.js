@@ -94,3 +94,34 @@ test("toggles accessibility settings and applies body classes", async ({ page })
   await expect(page.locator("body")).toHaveClass(/a11y-high-contrast/);
   await expect(page.locator("body")).toHaveClass(/a11y-enhanced-focus/);
 });
+
+
+test("opens document metadata from an icon and deletes an entry", async ({ page }) => {
+  await installMockStudySpaceApi(page, {
+    authenticated: true,
+    user: { username: "ada" },
+    documents: [{ filename: "crypto-notes.pdf", tag: "Security" }],
+    tags: ["Security"],
+    metadata: {
+      "crypto-notes.pdf": {
+        assessments: [
+          { item: "Midterm", weight: "40%" },
+          { item: "Coursework", weight: "60%" },
+        ],
+        deadlines: [{ event: "Midterm", date: "2026-05-12" }],
+        contacts: [{ name: "Dr. Rao", role: "Lecturer", email: "rao@example.edu" }],
+      },
+    },
+  });
+
+  await page.goto("/");
+
+  await page.getByLabel("View metadata for crypto-notes.pdf").click();
+  await expect(page.getByText("Midterm • 40%")).toBeVisible();
+  await expect(page.getByText("Dr. Rao (Lecturer) • rao@example.edu")).toBeVisible();
+
+  await page.locator(".metadata-section").filter({ hasText: "Assessments" }).getByRole("button", { name: "Delete" }).first().click();
+
+  await expect(page.getByText("Midterm • 40%")).not.toBeVisible();
+  await expect(page.getByText("Coursework • 60%")).toBeVisible();
+});

@@ -24,6 +24,7 @@ import {
   signOut,
   signUp,
   removeNote,
+  removeMetadataEntry,
   removeStudySet,
   removeTag,
   sendChatMessage,
@@ -75,7 +76,6 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
-  const [expandedAssessments, setExpandedAssessments] = useState(new Set());
   const [tags, setTags] = useState([]);
   const [notes, setNotes] = useState([]);
   const [metadata, setMetadata] = useState({});
@@ -604,6 +604,23 @@ export default function App() {
       await loadDocumentsList();
       await loadMetadata();
       announce(`Deleted ${filename}.`);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      showError(error.message);
+    }
+  }
+
+  async function handleDeleteMetadataEntry(filename, section, index) {
+    try {
+      const payload = await removeMetadataEntry(filename, section, index);
+      setMetadata((prev) => ({
+        ...prev,
+        [filename]: payload.metadata || {},
+      }));
+      announce(`Removed ${section.slice(0, -1)} metadata from ${filename}.`);
     } catch (error) {
       if (isUnauthorizedError(error)) {
         handleUnauthorized();
@@ -1220,11 +1237,10 @@ export default function App() {
                       documents={documents}
                       tags={tags}
                       metadata={metadata}
-                      expandedAssessments={expandedAssessments}
-                      setExpandedAssessments={setExpandedAssessments}
                       selectedFiles={selectedFiles}
                       setSelectedFiles={setSelectedFiles}
                       handleUpdateTag={handleUpdateTag}
+                      handleDeleteMetadataEntry={handleDeleteMetadataEntry}
                       handleDeleteDocument={handleDeleteDocument}
                       notes={notes}
                       noteDraft={noteDraft}
@@ -1361,11 +1377,10 @@ export default function App() {
                       documents={documents}
                       tags={tags}
                       metadata={metadata}
-                      expandedAssessments={expandedAssessments}
-                      setExpandedAssessments={setExpandedAssessments}
                       selectedFiles={selectedFiles}
                       setSelectedFiles={setSelectedFiles}
                       handleUpdateTag={handleUpdateTag}
+                      handleDeleteMetadataEntry={handleDeleteMetadataEntry}
                       handleDeleteDocument={handleDeleteDocument}
                       notes={notes}
                       noteDraft={noteDraft}

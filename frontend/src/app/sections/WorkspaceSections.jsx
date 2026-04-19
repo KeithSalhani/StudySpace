@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { formatDate } from "../utils";
 
 export default function WorkspaceSections({
@@ -10,11 +12,10 @@ export default function WorkspaceSections({
   documents,
   tags,
   metadata,
-  expandedAssessments,
-  setExpandedAssessments,
   selectedFiles,
   setSelectedFiles,
   handleUpdateTag,
+  handleDeleteMetadataEntry,
   handleDeleteDocument,
   notes,
   noteDraft,
@@ -22,6 +23,7 @@ export default function WorkspaceSections({
   handleAddNote,
   handleDeleteNote,
 }) {
+  const [openMetadataDocument, setOpenMetadataDocument] = useState(null);
   const groupedDocuments = { Uncategorized: [] };
   tags.forEach((tag) => {
     groupedDocuments[tag] = [];
@@ -35,18 +37,16 @@ export default function WorkspaceSections({
     groupedDocuments[tag].push(doc);
   });
 
-  const tagMetadata = {};
-  Object.keys(groupedDocuments).forEach((tag) => {
-    tagMetadata[tag] = { assessments: [], deadlines: [], contacts: [] };
-    groupedDocuments[tag].forEach((doc) => {
-      const docMeta = metadata[doc.filename];
-      if (docMeta) {
-        if (docMeta.assessments) tagMetadata[tag].assessments.push(...docMeta.assessments);
-        if (docMeta.deadlines) tagMetadata[tag].deadlines.push(...docMeta.deadlines);
-        if (docMeta.contacts) tagMetadata[tag].contacts.push(...docMeta.contacts);
-      }
-    });
-  });
+  function getDocumentMetadataCount(docMeta) {
+    if (!docMeta || typeof docMeta !== "object") {
+      return 0;
+    }
+    return ["assessments", "deadlines", "contacts"].reduce((total, key) => {
+      return total + (Array.isArray(docMeta[key]) ? docMeta[key].length : 0);
+    }, 0);
+  }
+
+  const activeMetadata = openMetadataDocument ? metadata[openMetadataDocument] || {} : null;
 
   return (
     <div className="sidebar-stack">
@@ -156,10 +156,6 @@ export default function WorkspaceSections({
                 return tagA.localeCompare(tagB);
               })
               .map(([tag, docs]) => {
-                const meta = tagMetadata[tag];
-                const hasInsights = meta && (meta.assessments.length > 0 || meta.contacts.length > 0);
-                const isAssessmentsExpanded = expandedAssessments.has(tag);
-
                 return (
                   <div
                     key={tag}
@@ -171,115 +167,84 @@ export default function WorkspaceSections({
                       <div className="micro-pill">{docs.length} file{docs.length === 1 ? "" : "s"}</div>
                     </div>
 
-                    {hasInsights && (
-                      <div className="tag-insights" style={{ marginBottom: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                        {meta.assessments.length > 0 && (
-                          <div className="insight-group">
-                            <button
-                              className="insight-label"
-                              type="button"
-                              aria-expanded={isAssessmentsExpanded}
-                              aria-controls={`assessments-${tag}`}
-                              style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                              onClick={() => {
-                                setExpandedAssessments((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(tag)) next.delete(tag);
-                                  else next.add(tag);
-                                  return next;
-                                });
-                              }}
-                            >
-                              Assessments
-                              <span style={{ fontSize: "0.8rem" }}>{isAssessmentsExpanded ? "▲" : "▼"}</span>
-                            </button>
-                            {isAssessmentsExpanded && (
-                              <div id={`assessments-${tag}`} className="stack">
-                                {meta.assessments.map((a, i) => (
-                                  <div key={i} className="insight-item">
-                                    <div className="insight-text">{a.item}</div>
-                                    <div className="pill">{a.weight}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {meta.contacts.length > 0 && (
-                          <div className="insight-group">
-                            <div className="insight-label">Contacts</div>
-                            <div className="stack">
-                              {meta.contacts.map((c, i) => (
-                                <div key={i} className="insight-item">
-                                  <div className="insight-text"><strong>{c.name}</strong> ({c.role})</div>
-                                  <div className="meta-text">{c.email}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     <div className="stack">
-                      {docs.map((doc) => (
-                        <div key={doc.filename} className="document-item" style={{ background: "var(--surface-strong)" }}>
-                          <label className="document-select">
-                            <input
-                              type="checkbox"
-                              checked={selectedFiles.has(doc.filename)}
-                              onChange={() =>
-                                setSelectedFiles((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(doc.filename)) {
-                                    next.delete(doc.filename);
-                                  } else {
-                                    next.add(doc.filename);
+                      {docs.map((doc) => {
+                        const docMeta = metadata[doc.filename] || {};
+                        const metadataCount = getDocumentMetadataCount(docMeta);
+                        return (
+                          <div key={doc.filename} className="document-card-shell">
+                            <div className="document-item" style={{ background: "var(--surface-strong)" }}>
+                              <label className="document-select">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedFiles.has(doc.filename)}
+                                  onChange={() =>
+                                    setSelectedFiles((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(doc.filename)) {
+                                        next.delete(doc.filename);
+                                      } else {
+                                        next.add(doc.filename);
+                                      }
+                                      return next;
+                                    })
                                   }
-                                  return next;
-                                })
-                              }
-                            />
-                            <div className="document-meta">
-                              <div className="document-name" title={doc.filename}>
-                                {doc.filename}
-                              </div>
-                              <div className="document-line">
-                                <select
-                                  className="micro-pill document-tag-select"
-                                  aria-label={`Topic for ${doc.filename}`}
-                                  value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
-                                  onChange={(event) => {
-                                    if (event.target.value !== (doc.tag || "")) {
-                                      void handleUpdateTag(doc.filename, event.target.value);
-                                    }
-                                  }}
+                                />
+                                <div className="document-meta">
+                                  <div className="document-name" title={doc.filename}>
+                                    {doc.filename}
+                                  </div>
+                                  <div className="document-line">
+                                    <select
+                                      className="micro-pill document-tag-select"
+                                      aria-label={`Topic for ${doc.filename}`}
+                                      value={doc.tag && tags.includes(doc.tag) ? doc.tag : ""}
+                                      onChange={(event) => {
+                                        if (event.target.value !== (doc.tag || "")) {
+                                          void handleUpdateTag(doc.filename, event.target.value);
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Uncategorized</option>
+                                      {tags.map((topic) => (
+                                        <option key={topic} value={topic}>{topic}</option>
+                                      ))}
+                                    </select>
+                                    {selectedFiles.has(doc.filename) ? (
+                                      <span className="micro-pill active">Live</span>
+                                    ) : (
+                                      <span className="micro-pill">Muted</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </label>
+                              <div className="document-actions">
+                                {metadataCount > 0 ? (
+                                  <button
+                                    className="icon-button metadata-toggle-button"
+                                    type="button"
+                                    title="View metadata"
+                                    aria-label={`View metadata for ${doc.filename}`}
+                                    onClick={() => setOpenMetadataDocument(doc.filename)}
+                                  >
+                                    <span className="metadata-toggle-glyph" aria-hidden="true">i</span>
+                                    <span className="metadata-count">{metadataCount}</span>
+                                  </button>
+                                ) : null}
+                                <button
+                                  className="icon-button"
+                                  type="button"
+                                  title="Delete"
+                                  aria-label={`Delete ${doc.filename}`}
+                                  onClick={() => void handleDeleteDocument(doc.filename)}
                                 >
-                                  <option value="">Uncategorized</option>
-                                  {tags.map((topic) => (
-                                    <option key={topic} value={topic}>{topic}</option>
-                                  ))}
-                                </select>
-                                {selectedFiles.has(doc.filename) ? (
-                                  <span className="micro-pill active">Live</span>
-                                ) : (
-                                  <span className="micro-pill">Muted</span>
-                                )}
+                                  ×
+                                </button>
                               </div>
                             </div>
-                          </label>
-                          <button
-                            className="icon-button"
-                            type="button"
-                            title="Delete"
-                            aria-label={`Delete ${doc.filename}`}
-                            onClick={() => void handleDeleteDocument(doc.filename)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -333,6 +298,114 @@ export default function WorkspaceSections({
           </button>
         </div>
       </section>
+
+      {openMetadataDocument ? (
+        <div className="modal-backdrop" onClick={() => setOpenMetadataDocument(null)}>
+          <section
+            className="modal metadata-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Metadata for ${openMetadataDocument}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <div className="section-title">Document Metadata</div>
+                <div className="meta-text">{openMetadataDocument}</div>
+              </div>
+              <button
+                className="icon-button modal-close"
+                type="button"
+                aria-label="Close metadata panel"
+                onClick={() => setOpenMetadataDocument(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body metadata-modal-body">
+              {Array.isArray(activeMetadata?.assessments) && activeMetadata.assessments.length > 0 ? (
+                <div className="metadata-section">
+                  <div className="insight-label">Assessments</div>
+                  <div className="stack">
+                    {activeMetadata.assessments.map((entry, index) => (
+                      <div key={`assessment-${index}`} className="insight-item metadata-entry">
+                        <div className="insight-text">
+                          <strong>{entry.item}</strong>
+                          {entry.weight ? ` • ${entry.weight}` : ""}
+                        </div>
+                        <button
+                          className="metadata-delete"
+                          type="button"
+                          onClick={() =>
+                            void handleDeleteMetadataEntry(openMetadataDocument, "assessments", index)
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {Array.isArray(activeMetadata?.deadlines) && activeMetadata.deadlines.length > 0 ? (
+                <div className="metadata-section">
+                  <div className="insight-label">Deadlines</div>
+                  <div className="stack">
+                    {activeMetadata.deadlines.map((entry, index) => (
+                      <div key={`deadline-${index}`} className="insight-item metadata-entry">
+                        <div className="insight-text">
+                          <strong>{entry.event}</strong>
+                          {entry.date ? ` • ${formatDate(entry.date)}` : ""}
+                        </div>
+                        <button
+                          className="metadata-delete"
+                          type="button"
+                          onClick={() =>
+                            void handleDeleteMetadataEntry(openMetadataDocument, "deadlines", index)
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {Array.isArray(activeMetadata?.contacts) && activeMetadata.contacts.length > 0 ? (
+                <div className="metadata-section">
+                  <div className="insight-label">Contacts</div>
+                  <div className="stack">
+                    {activeMetadata.contacts.map((entry, index) => (
+                      <div key={`contact-${index}`} className="insight-item metadata-entry">
+                        <div className="insight-text">
+                          <strong>{entry.name}</strong>
+                          {entry.role ? ` (${entry.role})` : ""}
+                          {entry.email ? ` • ${entry.email}` : ""}
+                        </div>
+                        <button
+                          className="metadata-delete"
+                          type="button"
+                          onClick={() =>
+                            void handleDeleteMetadataEntry(openMetadataDocument, "contacts", index)
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {getDocumentMetadataCount(activeMetadata) === 0 ? (
+                <div className="empty-card">No extracted metadata for this document.</div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

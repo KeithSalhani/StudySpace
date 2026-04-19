@@ -159,6 +159,29 @@ export async function installMockStudySpaceApi(page, overrides = {}) {
     }
 
     if (pathname.startsWith("/documents/") && method === "DELETE") {
+      if (pathname.includes("/metadata/")) {
+        const parts = pathname.split("/");
+        const filename = decodeURIComponent(parts[2] || "");
+        const section = decodeURIComponent(parts[4] || "");
+        const index = Number(parts[5] || "-1");
+        const docMetadata = state.metadata[filename] || {};
+        const entries = Array.isArray(docMetadata[section]) ? docMetadata[section] : [];
+
+        if (index < 0 || index >= entries.length) {
+          return jsonResponse(route, { detail: "Metadata entry not found" }, 404);
+        }
+
+        state.metadata[filename] = {
+          ...docMetadata,
+          [section]: entries.filter((_, itemIndex) => itemIndex !== index),
+        };
+
+        return jsonResponse(route, {
+          message: "Metadata entry deleted successfully",
+          metadata: state.metadata[filename],
+        });
+      }
+
       const filename = decodeURIComponent(pathname.split("/").pop() || "");
       state.documents = state.documents.filter((item) => item.filename !== filename);
       delete state.metadata[filename];

@@ -133,6 +133,15 @@ export function deleteDocument(filename) {
   });
 }
 
+export function removeMetadataEntry(filename, section, index) {
+  return request(
+    `/documents/${encodeURIComponent(filename)}/metadata/${encodeURIComponent(section)}/${index}`,
+    {
+      method: "DELETE"
+    }
+  );
+}
+
 export function updateDocumentTag(filename, tag) {
   return request(`/documents/${encodeURIComponent(filename)}/tag`, {
     method: "PUT",

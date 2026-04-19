@@ -266,6 +266,52 @@ async def test_get_metadata_scoped_to_user(main_module):
 
 
 @pytest.mark.asyncio
+async def test_delete_metadata_entry_removes_target_item(main_module):
+    main_module.app.state.db.create_user("alice", "hash", "salt")
+    main_module.app.state.db.set_document_metadata(
+        "alice",
+        "doc1.pdf",
+        {
+            "assessments": [{"item": "A1"}, {"item": "A2"}],
+            "contacts": [{"name": "Dr. Smith"}],
+        },
+    )
+    main_module.vector_store.get_document_metadata.return_value = {
+        "filename": "doc1.pdf",
+        "owner_username": "alice",
+    }
+
+    response = await main_module.delete_metadata_entry(
+        "doc1.pdf",
+        "assessments",
+        0,
+        current_user=user("alice"),
+    )
+
+    assert response["message"] == "Metadata entry deleted successfully"
+    assert response["metadata"]["assessments"] == [{"item": "A2"}]
+    assert response["metadata"]["contacts"] == [{"name": "Dr. Smith"}]
+
+
+@pytest.mark.asyncio
+async def test_delete_metadata_entry_rejects_unknown_section(main_module):
+    main_module.vector_store.get_document_metadata.return_value = {
+        "filename": "doc1.pdf",
+        "owner_username": "alice",
+    }
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main_module.delete_metadata_entry(
+            "doc1.pdf",
+            "unknown",
+            0,
+            current_user=user("alice"),
+        )
+
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_update_document_tag_endpoint(main_module):
     main_module.app.state.db.create_user("alice", "hash", "salt")
     main_module.app.state.db.set_document_metadata("alice", "test.pdf", {"tag": "OldTag"})
